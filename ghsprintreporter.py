@@ -1,9 +1,4 @@
-# from __future__ import print_function
-# from apiclient.discovery import build
-# from httplib2 import Http
-# from oauth2client import file, client, tools
 from github3 import login
-# import gspread
 import datetime
 import calendar
 import re
@@ -38,29 +33,6 @@ def verify_milestone( issue, repo ):
     else:
         is_within_sprint = False
     return is_within_sprint
-
-    # SOME REDUNDANT CODE FOR REFERENCE
-    # curr_month = datetime.date.today().month
-    # curr_month_str = calendar.month_abbr[ curr_month ]
-    # splt = curr_sprint.split( ' ' )
-    # date_num = 0
-    # date_str = ''
-    # date_suffix_set = set( [ 'rd', 'th', 'nd' ] )
-    # sprint_month = ''
-    # constructed_sprint_date = None
-    # for item in splt:
-    #     if ( item.translate( None, digits ) in date_suffix_set ):
-    #         date_num = item.replace( item.translate( None, digits ), '' )
-    #     if ( curr_month_str in item ):
-    #         sprint_month_num = list( calendar.month_abbr ).index( curr_month_str )
-    # if ( date_num ) and ( sprint_month_num ):
-    #     constructed_sprint_date = datetime.date( datetime.date.today().year, 
-    #         sprint_month_num, int( date_num ) )
-    # if ( curr_date <= constructed_sprint_date ):
-    #     is_within_sprint = True
-    # else:
-    #     is_within_sprint = False
-    # return is_within_sprint
 
 def get_repo_by_index( gh, index ):
     repos = gh.repositories()
@@ -133,24 +105,6 @@ def parse_comment( text ):
 # in the sheet for the current sprint.
 def comment_id_check( gs, comment ):
     pass
-
-# redundant due to issues with maintaining a google api account
-# def setup_gs_api():
-#     SCOPES = [ 'https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive' ]
-#     store = file.Storage( 'credentials.json' )
-#     creds = store.get()
-#     if not creds or creds.invalid:
-#         flow = client.flow_from_clientsecrets( 'client_secret.json', SCOPES )
-#         creds = tools.run_flow( flow, store )
-#     service = build( 'sheets', 'v4', http=creds.authorize(Http()))
-#     SPREADSHEET_ID = '1PtGuXs5e9nPp-pb-Q-kFHtJBFxaWt_MKjWqTUoLkFLU'
-#     return creds
-
-# redundant due to issues with maintaining a google api account
-# def setup_gspread():
-#     creds = setup_gs_api()
-#     gc = gspread.authorize( creds )
-#     return gc
 
 # write information passed through the array into the xlsx
 def process_sheet( ws, wb, arr ):
