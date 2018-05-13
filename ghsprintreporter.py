@@ -10,10 +10,30 @@ from Tkinter import *
 import ttk
 import time
 import threading
+import smtplib
 
 root = Tk()
 canvas_height = 400
 canvas_width = 600
+
+# email notification on report generation completion as traversing the
+# issues in the repository can take time
+def push_email():
+    try:
+        server = smtplib.SMTP( 'smtp.gmail.com', 587 )
+        server.ehlo()
+        server.starttls()
+        server.login( email_input.get(), email_pwd_input.get() )
+        FROM = email_input.get()
+        TO = recipent_input.get()
+        SUBJECT = "NOTIFICATION: Sprint Report Generated"
+        TEXT = "Hello, your sprint report has been generated. Enjoy!"
+        message = """From: %s\nTo: %s\nSubject: %s\n\n%s
+        """ % (FROM, ", ".join(TO), SUBJECT, TEXT)
+        server.sendmail( email_input.get(), recipent_input.get(), message )
+        server.quit()
+    except SMTPException:
+        update_status_message( "Unable to send email", 2 )
 
 # verify that the milestone assigned to the issue is in the on-going sprint
 # this will be done by getting the current sprint, extracting the date from
@@ -173,6 +193,10 @@ def process_comments_and_report( ws, wb, sheet_data_arr, issue, comments, \
     processed_count = 0
     cmnt_count = 0
     some_hours_found = False
+    stry_pnts = get_sp( issue )
+    assignees = get_assignee_str( issue )
+    status = issue.state
+    sprint = str( issue.milestone )
     for comment in comments:
         cmnt_count += 1
         comment_body = comment.body
@@ -183,7 +207,6 @@ def process_comments_and_report( ws, wb, sheet_data_arr, issue, comments, \
         for comment in comments:
             comment_date = comment.created_at.date()
             process = False
-            sprint_obj_title = None
             if ( sprint_info ):
                 if ( is_date_within_sprint( sprint_info, comment_date ) ):
                     process = True
@@ -196,18 +219,16 @@ def process_comments_and_report( ws, wb, sheet_data_arr, issue, comments, \
                 hours, notes = parse_comment( comment_body )
                 if ( hours != None ):
                     if ( not is_item_in_sheet( sheet_data_arr, comment_id, 1 ) ):
-                        if ( sprint_info ):
-                            sprint_obj_title = sprint_info[ 'object' ].title
-                        arr = [ issue.number, comment_id, str( comment.user ), \
-                            sprint_obj_title, hours, comment_date, \
-                            notes ]
+                        arr = [ issue.number, assignees, status, stry_pnts, \
+                            comment_id, str( comment.user ), sprint, hours, \
+                            comment_date, notes ]
                         sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
                         processed_count += 1
     else:
         # put the issue in the list anyway even if it doesn't have any comments
         if ( sprint_info ):
             if ( not is_item_in_sheet( sheet_data_arr, issue.number, 0 ) ):
-                arr = [ issue.number, None, None, None, \
+                arr = [ issue.number, assignees, status, stry_pnts, None, None, None, \
                     None, None, None ]
                 sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
                 processed_count += 1
@@ -254,13 +275,27 @@ def is_commit_format( cmt ):
 # issue passed to the function. The assignment is done in the form of 
 # a label on Github in the format '1sp', or '5sp', etc.
 def get_sp( issue ):
-    pass
+    labels = issue.labels()
+    sp_num = 0
+    for label in labels:
+        if ( 'sp' in label.name ):
+            sp_num = int( label.name[ :-2 ] )
+    return sp_num
+
+def get_assignee_str( issue ):
+    assignees = issue.assignees
+    asg_arr = ''
+    count = 0
+    for assignee in assignees:
+        if ( count > 0 ):
+            asg_arr += ", "
+        asg_arr += str( assignee )
+        count += 1
+    return str( asg_arr )
 
 def process_commits():
     gh = None
     gh = login( str( username_input.get() ), str( password_input.get() ) )
-    # wb = Workbook()
-    # ws = wb.active
     if ( gh ):
         try:
             def process_commmit_thrd():
@@ -291,6 +326,9 @@ def sprint_report():
     ws = wb.active
     wb.save( 'lifeprint-reporting.xlsx' )
     sheet_data_arr = [] # spreadsheet data internal container for checking duplicates
+    arr = [ "Issue", "Assignees", "Status", "St. Pts", "Comment ID", "Author", \
+        "Sprint", "Actual Hours", "Date", "Comments" ]
+    sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
     if ( gh ):
         def process_thread():
             try:
@@ -312,7 +350,8 @@ def sprint_report():
                                 issues_count_inc += 1
                                 comments = issue.comments()
                                 is_processed = process_comments_and_report( ws, wb, \
-                                    sheet_data_arr, issue, comments, sprint_info, None, None )
+                                    sheet_data_arr, issue, comments, sprint_info, \
+                                    None, None )
                                 if ( is_processed ):
                                     processed_count += 1
                                 if ( issues_count_inc == sprint_info[ 'issue-count' ] ):
@@ -333,10 +372,11 @@ def sprint_report():
                                 update_status_message( "Please provide valid dates", 2 )
                 if ( is_processed > 0 ):
                     update_status_message( "Sprint report generated!", 0 )
+                    push_email()
                 else:
                     update_status_message( "Nothing to process, review criteria", 2 )
             except Exception as exc:
-                update_status_message( "Incorrect username / password / repo", 2 )      
+                update_status_message( "Incorrect username / password / repo", 2 )
         t = threading.Thread( target=process_thread )
         t.start()
     else:
@@ -356,6 +396,14 @@ username_container = Frame( main_frame, width = 30 )
 username_container.pack()
 password_container = Frame( main_frame, width = 30 )
 password_container.pack()
+
+email_container = Frame( main_frame, width = 30 )
+email_container.pack()
+email_pwd_container = Frame( main_frame, width = 30 )
+email_pwd_container.pack()
+recipent_container = Frame( main_frame, width = 30 )
+recipent_container.pack()
+
 repo_container = Frame( main_frame, width = 30 )
 repo_container.pack()
 sep1 = Frame(main_frame, height = 10)
@@ -373,11 +421,11 @@ sep1 = Frame(main_frame, height = 10)
 sep1.pack()
 sprint_override_container = Frame( main_frame, width = 30 )
 sprint_override_container.pack()
-sprint_override_label = Label(sprint_override_container, width = 15, height = 1, \
-    text="Sprint override")
+sprint_override_label = Label(sprint_override_container, width = 15, \
+    height = 1, text="Sprint override")
 sprint_override_label.pack(side = LEFT)
-sprint_override_input = Entry(sprint_override_container, width = 25, borderwidth = 1, \
-    font = 'Calibri, 12')
+sprint_override_input = Entry(sprint_override_container, width = 25, \
+    borderwidth = 1, font = 'Calibri, 12')
 sprint_override_input.pack(side = RIGHT)
 sep1 = Frame(main_frame, height = 5)
 sep1.pack()
@@ -403,6 +451,7 @@ sep1 = Frame(main_frame, height = 5)
 sep1.pack()
 status_label = Label(main_frame, width=35, height=1, text="")
 status_label.pack(side = BOTTOM)
+
 username_label = Label(username_container, width=15, height=1, \
     text="Github username")
 username_label.pack(side = LEFT)
@@ -418,6 +467,26 @@ password_label.pack(side = LEFT)
 password_input = Entry(password_container, show='*',width = 25, \
     borderwidth = 1, font = 'Calibri, 12')
 password_input.pack(side = RIGHT)
+
+email_label = Label(email_container, width=15, height=1, \
+    text="Sender Email")
+email_label.pack(side = LEFT)
+email_input = Entry(email_container, width = 25, borderwidth = 1, \
+    font = 'Calibri, 12')
+email_input.pack(side = RIGHT)
+email_pwd_label = Label(email_pwd_container, width=15, height=1, \
+    text="Sender Password")
+email_pwd_label.pack(side = LEFT)
+email_pwd_input = Entry(email_pwd_container, width = 25, \
+    borderwidth = 1, font = 'Calibri, 12')
+email_pwd_input.pack(side = RIGHT)
+recipent_label = Label(recipent_container, width=15, height=1, \
+    text="Recipent Email")
+recipent_label.pack(side = LEFT)
+recipent_input = Entry(recipent_container, width = 25, \
+    borderwidth = 1, font = 'Calibri, 12')
+recipent_input.pack(side = RIGHT)
+
 sep2 = Frame(main_frame, height = 10)
 sep2.pack(side = BOTTOM)
 repo_label = Label(repo_container, width=15, height=1, \
