@@ -7,6 +7,9 @@ from string import letters
 from openpyxl import Workbook
 from openpyxl import load_workbook
 from Tkinter import *
+import ttk
+import time
+import threading
 
 root = Tk()
 canvas_height = 400
@@ -58,8 +61,15 @@ def get_repo_by_name( gh, name ):
 def get_curr_sprint_info( repo ):
     curr_sprint = None
     open_stones = repo.milestones( 'open' )
+    closed_stones = repo.milestones( 'closed' )
+    criteria = 'Sprint'
+    if ( sprint_override_input.get() != '' ):
+        criteria = sprint_override_input.get()
     for stone in open_stones:
-        if ( 'Sprint' in str( stone ) ):
+        if ( criteria in str( stone ) ):
+            curr_sprint = stone
+    for stone in closed_stones:
+        if ( criteria in str( stone ) ):
             curr_sprint = stone
     sprint_issues_count = curr_sprint.open_issues_count + \
         curr_sprint.closed_issues_count
@@ -133,108 +143,204 @@ def comment_id_check( gs, comment ):
     pass
 
 # write information passed through the array into the xlsx
-def process_sheet( ws, wb, arr ):
-    empty_row_num = None
-    empty_found = False
-    rownum = 2
-    while ( empty_found == False ):
-        cell_val = ws.cell( rownum, 1 )
-        if ( cell_val.value == None ):
-            empty_found = True
-        else:
-            rownum += 1
-    start_cell_a1 = 'A' + str( rownum )
+def process_sheet( ws, wb, arr, sheet_data_arr ):
     ws.append( arr )
+    sheet_data_arr.append( arr )
     wb.save( 'lifeprint-reporting.xlsx' )
-    return True
+    return sheet_data_arr
 
-def is_commentid_in_sheet( ws, comment_id ):
+def is_item_in_sheet_test( sheet_data_arr, item, col_num ):
+    return False
+
+def is_item_in_sheet( sheet_data_arr, item, col_num ):
     found = False
-    rownum = 2
-    while ( found == False ):
-        cell_val = ws.cell( rownum, 2 ).value
-        if ( cell_val != None ):
-            if ( comment_id == cell_val ):
+    rownum = 1
+    inc = 0
+    if ( sheet_data_arr ):
+        for row in sheet_data_arr:
+            if ( row[ col_num ] == item ):
+                print( item )
                 found = True
-            else:
-                rownum += 1
-        else:
-            break
+                break
     return found
 
-def process_comments_and_report( ws, wb, issue, comments, sprint_info = None, \
-        start_date = None, end_date = None ):
+# function checks whether an issue within the sprint or the date range
+# has comments or not, then parses any available comments to check for
+# hours which are appended to the worksheet array as well as the sheet
+# itself.
+def process_comments_and_report( ws, wb, sheet_data_arr, issue, comments, \
+        sprint_info = None, start_date = None, end_date = None ):
+    processed_count = 0
+    cmnt_count = 0
+    some_hours_found = False
     for comment in comments:
-        comment_date = comment.created_at.date()
-        process = False
-        sprint_obj_title = None
-        if ( sprint_info ):
-            if ( is_date_within_sprint( sprint_info, comment_date ) ):
-                process = True
-        elif ( start_date ) and ( end_date ):
-            if ( is_date_within_range( start_date, end_date, comment_date ) ):
-                process = True
-        if ( process ):
-            comment_body = comment.body
-            comment_id = comment.id
-            if ( not is_commentid_in_sheet( ws, comment_id ) ):
+        cmnt_count += 1
+        comment_body = comment.body
+        hours, notes = parse_comment( comment_body )
+        if ( hours != None ):
+            some_hours_found = True
+    if ( cmnt_count > 0 ) and ( some_hours_found ):
+        for comment in comments:
+            comment_date = comment.created_at.date()
+            process = False
+            sprint_obj_title = None
+            if ( sprint_info ):
+                if ( is_date_within_sprint( sprint_info, comment_date ) ):
+                    process = True
+            elif ( start_date ) and ( end_date ):
+                if ( is_date_within_range( start_date, end_date, comment_date ) ):
+                    process = True
+            if ( process ):
+                comment_body = comment.body
+                comment_id = comment.id
                 hours, notes = parse_comment( comment_body )
                 if ( hours != None ):
-                    if ( sprint_info ):
-                        sprint_obj_title = sprint_info[ 'object' ].title
-                    arr = [ issue.number, comment_id, str( comment.user ), \
-                        sprint_obj_title, hours, comment_date, \
-                        notes ]
-                    if ( process_sheet( ws, wb, arr ) ):
-                        status_label.configure( foreground = "blue" )
-                        status_label[ 'text' ] = 'Sprint report generated!'
+                    if ( not is_item_in_sheet( sheet_data_arr, comment_id, 1 ) ):
+                        if ( sprint_info ):
+                            sprint_obj_title = sprint_info[ 'object' ].title
+                        arr = [ issue.number, comment_id, str( comment.user ), \
+                            sprint_obj_title, hours, comment_date, \
+                            notes ]
+                        sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
+                        processed_count += 1
+    else:
+        # put the issue in the list anyway even if it doesn't have any comments
+        if ( sprint_info ):
+            if ( not is_item_in_sheet( sheet_data_arr, issue.number, 0 ) ):
+                arr = [ issue.number, None, None, None, \
+                    None, None, None ]
+                sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
+                processed_count += 1
+    if ( processed_count > 0 ):
+        return True, sheet_data_arr
+    else:
+        return False, sheet_data_arr
             
-
 def planning_report():
     pass
 
+def disable_process_buttons():
+    sprint_report_button.config( state='disabled' )
+    # planning_report_button.config( state='disabled' )
+    # commits_report_button.config( state='disabled' )
+
+def enable_process_buttons():
+    sprint_report_button.config( state='normal' )
+    # planning_report_button.config( state='normal' )
+    # commits_report_button.config( state='normal' )
+
+def update_status_message( msg, code = 0 ):
+    if ( code == 0 ):
+        status_label.configure( foreground = "blue" )
+        enable_process_buttons()
+    elif ( code == 1 ):
+        status_label.configure( foreground = "orange" )
+        disable_process_buttons()
+    elif( code == 2 ):
+        status_label.configure( foreground = "red" )
+        enable_process_buttons()
+    status_label[ 'text' ] = msg
+
 issue_retrieval_method_var = IntVar()
+
+# checks we need to consider in commit:
+# 1) check if pcosgrove/Lifeprint#999 format is present in the commit
+# 2) check if 'what, why, impact' are present in the commit message
+# 3) 
+def is_commit_format( cmt ):
+    pass
+
+# this function will return the story points that are assigned to the
+# issue passed to the function. The assignment is done in the form of 
+# a label on Github in the format '1sp', or '5sp', etc.
+def get_sp( issue ):
+    pass
+
+def process_commits():
+    gh = None
+    gh = login( str( username_input.get() ), str( password_input.get() ) )
+    # wb = Workbook()
+    # ws = wb.active
+    if ( gh ):
+        try:
+            def process_commmit_thrd():
+                repo = get_repo_by_name( gh, repo_input.get() )
+                cmts = repo.commits()
+                for cmt in cmts:
+                    cmt = cmt.commit.message
+                    violation_code = is_commit_format( cmt )
+                    if ( violation_code == 1 ):
+                        pass
+                    elif ( violation_code == 2 ):
+                        pass
+                    elif ( violation_code == 3 ):
+                        pass
+                    elif ( violation_code == 4 ):
+                        pass
+            t = threading.Thread( target = process_commmit_thrd )
+            t.start()
+        except Exception as exc:
+            update_status_message( "Incorrect username / password / repo", 2 )
 
 def sprint_report():
     status_label[ 'text' ] = ''
     status_label.configure( foreground = "red" )
     gh = None
-    try:
-        gh = login( str( username_input.get() ), str( password_input.get() ) )
-        wb = Workbook()
-        ws = wb.active
-        if ( gh ):
-            # repo = get_repo_by_index( gh, 0 )
-            repo = get_repo_by_name( gh, repo_input.get() )
-            repo_issues = repo.issues( None, 'all' )
-            count = 0
-            issue_arr = [ ]
-            sprint_info = get_curr_sprint_info( repo )
-            for issue in repo_issues:
-                parent_issue = None # to be worked on later
-                if ( issue_retrieval_method_var.get() == 1 ):
-                    if ( issue.milestone ):
-                        if ( issue.milestone == sprint_info[ 'object' ] ):
-                            issue_arr.append( issue )
-                            comments = issue.comments()
-                            process_comments_and_report( ws, wb, issue, comments, sprint_info, \
-                                None, None )
-                elif ( issue_retrieval_method_var.get() == 2 ):
-                    if ( start_date_input.get() ) and ( end_date_input.get() ):
-                        created_start_date = get_date_from_input( start_date_input.get() )
-                        created_end_date = get_date_from_input( end_date_input.get() )
-                        if ( created_start_date ) and ( created_end_date ):
-                            process_comments_and_report( ws, wb, issue, comments, None, \
-                                created_start_date, created_end_date )
-                        else:
-                            status_label.configure( foreground = "red" )
-                            status_label[ 'text' ] = 'Please provide valid dates'
-                if ( issue_arr.count == sprint_info[ 'issue-count' ] ):
-                    break
-        else:
-            status_label[ 'text' ] = 'Please enter valid username / password / repo'
-    except Exception as exc:
-        status_label[ 'text' ] = 'Incorrect username / password / repo'
+    gh = login( str( username_input.get() ), str( password_input.get() ) )
+    wb = Workbook()
+    ws = wb.active
+    wb.save( 'lifeprint-reporting.xlsx' )
+    sheet_data_arr = [] # spreadsheet data internal container for checking duplicates
+    if ( gh ):
+        def process_thread():
+            try:
+                update_status_message( "Processing, please wait...", 1 )
+                status_label.configure( foreground = "orange" )
+                repo = get_repo_by_name( gh, repo_input.get() )
+                repo_issues = repo.issues( None, 'all' )
+                sprint_info = get_curr_sprint_info( repo )
+                issues_count_inc = 0
+                is_processed = False
+                processed_count = 0
+                for issue in repo_issues:
+                    msg = 'Processing #' + str( issue.number ) + ', please wait...'
+                    update_status_message( msg, 1 )
+                    parent_issue = None # to be worked on later
+                    if ( issue_retrieval_method_var.get() == 1 ):
+                        if ( issue.milestone ):
+                            if ( issue.milestone == sprint_info[ 'object' ] ):
+                                issues_count_inc += 1
+                                comments = issue.comments()
+                                is_processed = process_comments_and_report( ws, wb, \
+                                    sheet_data_arr, issue, comments, sprint_info, None, None )
+                                if ( is_processed ):
+                                    processed_count += 1
+                                if ( issues_count_inc == sprint_info[ 'issue-count' ] ):
+                                    break
+                    elif ( issue_retrieval_method_var.get() == 2 ):
+                        if ( start_date_input.get() ) and ( end_date_input.get() ):
+                            created_start_date = get_date_from_input( start_date_input.get() )
+                            created_end_date = get_date_from_input( end_date_input.get() )
+                            if ( created_start_date ) and ( created_end_date ):
+                                comments = issue.comments()
+                                if ( comments ):
+                                    is_processed = process_comments_and_report( ws, wb, \
+                                        sheet_data_arr, issue, comments, None, \
+                                        created_start_date, created_end_date )
+                                    if ( is_processed ):
+                                        processed_count += 1
+                            else:
+                                update_status_message( "Please provide valid dates", 2 )
+                if ( is_processed > 0 ):
+                    update_status_message( "Sprint report generated!", 0 )
+                else:
+                    update_status_message( "Nothing to process, review criteria", 2 )
+            except Exception as exc:
+                update_status_message( "Incorrect username / password / repo", 2 )      
+        t = threading.Thread( target=process_thread )
+        t.start()
+    else:
+        update_status_message( "Enter valid username / password / repo", 2 )
 
 main_frame = Frame(root, width = 30, bd = 2, relief = GROOVE)
 main_frame.pack()
@@ -293,7 +399,7 @@ end_date_label.pack(side = LEFT)
 end_date_input = Entry(end_date_container, width = 15, borderwidth = 1, \
     font = 'Calibri, 12')
 end_date_input.pack(side = RIGHT)
-sep1 = Frame(main_frame, height = 10)
+sep1 = Frame(main_frame, height = 5)
 sep1.pack()
 status_label = Label(main_frame, width=35, height=1, text="")
 status_label.pack(side = BOTTOM)
@@ -322,9 +428,12 @@ repo_input = Entry(repo_container, width = 25, \
 repo_input.pack(side = RIGHT)
 exit_button = Button(main_frame, width = 35, bd = 2, text="Quit", command = quit)
 exit_button.pack(side = BOTTOM)
-planning_report_button = Button(main_frame, width = 35, bd = 2, \
-    text="Generate Planned Items List", command = planning_report)
-planning_report_button.pack(side = BOTTOM)
+# planning_report_button = Button(main_frame, width = 35, bd = 2, \
+#     text="Generate Planned Items List", command = planning_report)
+# planning_report_button.pack(side = BOTTOM)
+# commits_report_button = Button(main_frame, width = 35, bd = 2, \
+#     text="Commits Report", command = process_commits)
+# commits_report_button.pack(side = BOTTOM)
 sprint_report_button = Button(main_frame, width = 35, bd = 2, \
     text="Generate Report", command = sprint_report)
 sprint_report_button.pack(side = BOTTOM)
