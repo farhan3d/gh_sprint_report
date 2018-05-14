@@ -127,14 +127,17 @@ def get_comment_author( comment ):
     return author
 
 # hours can be written as a part of the comment body as
-# '8hrs' or '8 hrs' or even '8 hours'. the numeric value
-# will be extracted and recorded for the resource against
-# the issue, along with additional development notes provided
-# inside the issue. how cool is that?
+# '8hrs'. the numeric value will be extracted and recorded 
+# for the resource against the issue, along with additional
+# development notes provided inside the issue. how cool is that?
+# multiple hour entries in one comment or issue body will be 
+# added up and written as one value in a row on the sheet.
 def parse_comment( text ):
-    data = [ None, None ]
-    loc = None
+    data = [ 0, None ]
+    loc = []
     full_hours_text = ''
+    hours_text_arr = []
+    total_hours = 0
     splt = text.split( ' ' )
     breakout = False
     for item in splt:
@@ -143,16 +146,18 @@ def parse_comment( text ):
                 splt_yet_again = item.split( "\n" )
                 for sub_item in splt_yet_again:
                     if ( 'hrs' in sub_item ):
-                        loc = sub_item.find( 'hrs' )
+                        loc.append( sub_item.find( 'hrs' ) )
                         full_hours_text = str( sub_item )
-                        breakout = True
-                        break
-    if ( loc != None ):
-        prefix_cleaned = full_hours_text[ :-3 ]
-        prefix_cleaned = prefix_cleaned.translate( None, letters )
-        if ( prefix_cleaned.isdigit() ):
-            data[ 0 ] = int( prefix_cleaned )
-            data[ 1 ] = text.split( full_hours_text )[ 1 ]
+                        hours_text_arr.append( full_hours_text )
+                        # breakout = True
+                        # break
+    for item in hours_text_arr:
+        if ( loc.count > 0 ):
+            prefix_cleaned = item[ :-3 ]
+            prefix_cleaned = prefix_cleaned.translate( None, letters )
+            if ( prefix_cleaned.isdigit() ):
+                data[ 0 ] += int( prefix_cleaned )
+                data[ 1 ] = text.split( item )[ 1 ]
     return data
 
 # need to check whether the comment we are processing for hours
@@ -197,11 +202,12 @@ def process_comments_and_report( ws, wb, sheet_data_arr, issue, comments, \
     assignees = get_assignee_str( issue )
     status = issue.state
     sprint = str( issue.milestone )
+    est = get_issue_estimate( issue )
     for comment in comments:
         cmnt_count += 1
         comment_body = comment.body
         hours, notes = parse_comment( comment_body )
-        if ( hours != None ):
+        if ( hours != None ) and ( hours != 0 ):
             some_hours_found = True
     if ( cmnt_count > 0 ) and ( some_hours_found ):
         for comment in comments:
@@ -217,10 +223,10 @@ def process_comments_and_report( ws, wb, sheet_data_arr, issue, comments, \
                 comment_body = comment.body
                 comment_id = comment.id
                 hours, notes = parse_comment( comment_body )
-                if ( hours != None ):
+                if ( hours != None ) and ( hours != 0 ):
                     if ( not is_item_in_sheet( sheet_data_arr, comment_id, 1 ) ):
                         arr = [ issue.number, assignees, status, stry_pnts, \
-                            comment_id, str( comment.user ), sprint, hours, \
+                            comment_id, str( comment.user ), sprint, est, hours, \
                             comment_date, notes ]
                         sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
                         processed_count += 1
@@ -229,7 +235,7 @@ def process_comments_and_report( ws, wb, sheet_data_arr, issue, comments, \
         if ( sprint_info ):
             if ( not is_item_in_sheet( sheet_data_arr, issue.number, 0 ) ):
                 arr = [ issue.number, assignees, status, stry_pnts, None, None, None, \
-                    None, None, None ]
+                    est, None, None, None ]
                 sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
                 processed_count += 1
     if ( processed_count > 0 ):
@@ -293,6 +299,14 @@ def get_assignee_str( issue ):
         count += 1
     return str( asg_arr )
 
+# this method assumes that the estimate is provided in the main description
+# in the format '4hrs', and that only one estimate is available. If multiple
+# estimates are available in the main description, all of the estimates will
+# be added up to form the total estimate for the issue / story
+def get_issue_estimate( issue ):
+    hours, notes = parse_comment( issue.body )
+    return hours
+
 def process_commits():
     gh = None
     gh = login( str( username_input.get() ), str( password_input.get() ) )
@@ -327,56 +341,56 @@ def sprint_report():
     wb.save( 'lifeprint-reporting.xlsx' )
     sheet_data_arr = [] # spreadsheet data internal container for checking duplicates
     arr = [ "Issue", "Assignees", "Status", "St. Pts", "Comment ID", "Author", \
-        "Sprint", "Actual Hours", "Date", "Comments" ]
+        "Sprint", "Estimate", "Actual Hours", "Date", "Comments" ]
     sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
     if ( gh ):
         def process_thread():
-            try:
-                update_status_message( "Processing, please wait...", 1 )
-                status_label.configure( foreground = "orange" )
-                repo = get_repo_by_name( gh, repo_input.get() )
-                repo_issues = repo.issues( None, 'all' )
-                sprint_info = get_curr_sprint_info( repo )
-                issues_count_inc = 0
-                is_processed = False
-                processed_count = 0
-                for issue in repo_issues:
-                    msg = 'Processing #' + str( issue.number ) + ', please wait...'
-                    update_status_message( msg, 1 )
-                    parent_issue = None # to be worked on later
-                    if ( issue_retrieval_method_var.get() == 1 ):
-                        if ( issue.milestone ):
-                            if ( issue.milestone == sprint_info[ 'object' ] ):
-                                issues_count_inc += 1
-                                comments = issue.comments()
+            # try:
+            update_status_message( "Processing, please wait...", 1 )
+            status_label.configure( foreground = "orange" )
+            repo = get_repo_by_name( gh, repo_input.get() )
+            repo_issues = repo.issues( None, 'all' )
+            sprint_info = get_curr_sprint_info( repo )
+            issues_count_inc = 0
+            is_processed = False
+            processed_count = 0
+            for issue in repo_issues:
+                msg = 'Processing #' + str( issue.number ) + ', please wait...'
+                update_status_message( msg, 1 )
+                parent_issue = None # to be worked on later
+                if ( issue_retrieval_method_var.get() == 1 ):
+                    if ( issue.milestone ):
+                        if ( issue.milestone == sprint_info[ 'object' ] ):
+                            issues_count_inc += 1
+                            comments = issue.comments()
+                            is_processed = process_comments_and_report( ws, wb, \
+                                sheet_data_arr, issue, comments, sprint_info, \
+                                None, None )
+                            if ( is_processed ):
+                                processed_count += 1
+                            if ( issues_count_inc == sprint_info[ 'issue-count' ] ):
+                                break
+                elif ( issue_retrieval_method_var.get() == 2 ):
+                    if ( start_date_input.get() ) and ( end_date_input.get() ):
+                        created_start_date = get_date_from_input( start_date_input.get() )
+                        created_end_date = get_date_from_input( end_date_input.get() )
+                        if ( created_start_date ) and ( created_end_date ):
+                            comments = issue.comments()
+                            if ( comments ):
                                 is_processed = process_comments_and_report( ws, wb, \
-                                    sheet_data_arr, issue, comments, sprint_info, \
-                                    None, None )
+                                    sheet_data_arr, issue, comments, None, \
+                                    created_start_date, created_end_date )
                                 if ( is_processed ):
                                     processed_count += 1
-                                if ( issues_count_inc == sprint_info[ 'issue-count' ] ):
-                                    break
-                    elif ( issue_retrieval_method_var.get() == 2 ):
-                        if ( start_date_input.get() ) and ( end_date_input.get() ):
-                            created_start_date = get_date_from_input( start_date_input.get() )
-                            created_end_date = get_date_from_input( end_date_input.get() )
-                            if ( created_start_date ) and ( created_end_date ):
-                                comments = issue.comments()
-                                if ( comments ):
-                                    is_processed = process_comments_and_report( ws, wb, \
-                                        sheet_data_arr, issue, comments, None, \
-                                        created_start_date, created_end_date )
-                                    if ( is_processed ):
-                                        processed_count += 1
-                            else:
-                                update_status_message( "Please provide valid dates", 2 )
-                if ( is_processed > 0 ):
-                    update_status_message( "Sprint report generated!", 0 )
-                    push_email()
-                else:
-                    update_status_message( "Nothing to process, review criteria", 2 )
-            except Exception as exc:
-                update_status_message( "Incorrect username / password / repo", 2 )
+                        else:
+                            update_status_message( "Please provide valid dates", 2 )
+            if ( is_processed > 0 ):
+                update_status_message( "Sprint report generated!", 0 )
+                push_email()
+            else:
+                update_status_message( "Nothing to process, review criteria", 2 )
+            # except Exception as exc:
+            #     update_status_message( "Incorrect username / password / repo", 2 )
         t = threading.Thread( target=process_thread )
         t.start()
     else:
