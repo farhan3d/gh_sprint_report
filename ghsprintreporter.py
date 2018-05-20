@@ -11,10 +11,19 @@ import ttk
 import time
 import threading
 import smtplib
+import csv
+from email.mime.text import MIMEText
 
 root = Tk()
-canvas_height = 400
-canvas_width = 600
+
+# the csv file is formatted as follows:
+# github username | user email | user manager's username
+# this 3 column csv is used to get the emails of the
+# users who have violated the commit message format, and
+# an email is sent to them and their manager about the
+# violating commit. the csv file should reside in the
+# same folder this program is being run from.
+CSV_FILE_NAME = 'team'
 
 # email notification on report generation completion as traversing the
 # issues in the repository can take time
@@ -32,8 +41,29 @@ def push_email():
         """ % (FROM, ", ".join(TO), SUBJECT, TEXT)
         server.sendmail( email_input.get(), recipent_input.get(), message )
         server.quit()
-    except SMTPException:
+    except Exception:
         update_status_message( "Unable to send email", 2 )
+
+def push_email_to_user( sender_email, sender_pwd, recipent_email_list, email_sub, \
+    email_msg, bcc_email=None, error_code=2 ):
+    try:
+        server = smtplib.SMTP( 'smtp.gmail.com', 587 )
+        server.ehlo()
+        server.starttls()
+        server.login( sender_email, sender_pwd )
+        email_list_str = ','.join( map( str, recipent_email_list) )
+        recipents = []
+        recipents.extend( recipent_email_list )
+        if ( bcc_email != None ):
+            recipents.append( bcc_email )
+        message = MIMEText( email_msg )
+        message[ 'Subject' ] = email_sub
+        message[ 'From' ] = sender_email
+        message[ 'To' ] = ", ".join( recipents )
+        server.sendmail( sender_email, recipents, message.as_string() )
+        server.quit()
+    except Exception:
+        update_status_message( "Unable to send email", error_code )
 
 # verify that the milestone assigned to the issue is in the on-going sprint
 # this will be done by getting the current sprint, extracting the date from
@@ -85,10 +115,10 @@ def get_curr_sprint_info( repo ):
     criteria = 'Sprint'
     if ( sprint_override_input.get() != '' ):
         criteria = sprint_override_input.get()
-    for stone in open_stones:
+    for stone in closed_stones:
         if ( criteria in str( stone ) ):
             curr_sprint = stone
-    for stone in closed_stones:
+    for stone in open_stones:
         if ( criteria in str( stone ) ):
             curr_sprint = stone
     sprint_issues_count = curr_sprint.open_issues_count + \
@@ -234,7 +264,7 @@ def process_comments_and_report( ws, wb, sheet_data_arr, issue, comments, \
         # put the issue in the list anyway even if it doesn't have any comments
         if ( sprint_info ):
             if ( not is_item_in_sheet( sheet_data_arr, issue.number, 0 ) ):
-                arr = [ issue.number, assignees, status, stry_pnts, None, None, None, \
+                arr = [ issue.number, assignees, status, stry_pnts, None, None, sprint, \
                     est, None, None, None ]
                 sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
                 processed_count += 1
@@ -242,40 +272,64 @@ def process_comments_and_report( ws, wb, sheet_data_arr, issue, comments, \
         return True, sheet_data_arr
     else:
         return False, sheet_data_arr
-            
-def planning_report():
-    pass
 
 def disable_process_buttons():
     sprint_report_button.config( state='disabled' )
-    # planning_report_button.config( state='disabled' )
-    # commits_report_button.config( state='disabled' )
 
 def enable_process_buttons():
     sprint_report_button.config( state='normal' )
-    # planning_report_button.config( state='normal' )
-    # commits_report_button.config( state='normal' )
+
+def disable_commit_buttons():
+    commits_button.config( state='disabled' )
+
+def enable_commit_buttons():
+    commits_button.config( state='normal' )
 
 def update_status_message( msg, code = 0 ):
     if ( code == 0 ):
         status_label.configure( foreground = "blue" )
         enable_process_buttons()
+        status_label[ 'text' ] = msg
     elif ( code == 1 ):
         status_label.configure( foreground = "orange" )
         disable_process_buttons()
+        status_label[ 'text' ] = msg
     elif( code == 2 ):
         status_label.configure( foreground = "red" )
         enable_process_buttons()
-    status_label[ 'text' ] = msg
+        enable_commit_buttons()
+        status_label[ 'text' ] = msg
+    elif( code == 4 ):
+        commits_status_label.configure( foreground = "orange" )
+        disable_commit_buttons()
+        commits_status_label[ 'text' ] = msg
+    elif( code == 5 ):
+        commits_status_label.configure( foreground = "blue" )
+        enable_commit_buttons()
+        commits_status_label[ 'text' ] = msg
+    elif( code == 6 ):
+        commits_status_label.configure( foreground = "red" )
+        commits_status_label[ 'text' ] = msg
 
 issue_retrieval_method_var = IntVar()
 
+def get_team_dict_from_csv():
+    dict = {}
+    file = open( CSV_FILE_NAME + '.csv', 'rU' )
+    reader = csv.reader( file, dialect=csv.excel_tab )
+    for item in reader:
+        splt = item[ 0 ].split( "," )
+        dict[ splt[ 0 ] ] = [ splt[ 1 ], splt[ 2 ] ]
+    return dict
+
 # checks we need to consider in commit:
-# 1) check if pcosgrove/Lifeprint#999 format is present in the commit
+# 1) check if issue reference format is present in the commit
 # 2) check if 'what, why, impact' are present in the commit message
-# 3) 
 def is_commit_format( cmt ):
-    pass
+    violation_code = 0
+    if ( not issue_criteria_input.get() in cmt ) and ( not "Merge" in cmt ):
+        violation_code = 1
+    return violation_code
 
 # this function will return the story points that are assigned to the
 # issue passed to the function. The assignment is done in the form of 
@@ -307,45 +361,96 @@ def get_issue_estimate( issue ):
     hours, notes = parse_comment( issue.body )
     return hours
 
-def process_commits():
+def commits_report():
     gh = None
-    gh = login( str( username_input.get() ), str( password_input.get() ) )
-    if ( gh ):
-        try:
-            def process_commmit_thrd():
-                repo = get_repo_by_name( gh, repo_input.get() )
-                cmts = repo.commits()
+    gh_login_success = False
+    try:
+        gh = login( str( username_input.get() ), str( password_input.get() ) )
+        repo_check = gh.repositories()
+        for repo in repo_check:
+            name = repo.name
+        gh_login_success = True
+    except Exception as exc:
+        update_status_message( "Incorrect username / password / repo", 2 )
+        gh_login_success = False
+    if ( gh_login_success ):
+        def process_commmit_thrd():
+            operation_complete = False
+            repo = get_repo_by_name( gh, repo_input.get() )
+            cmt_date = "2018-01-01"
+            if ( commits_date_input.get() ):
+                cmt_date = commits_date_input.get()
+            cmts = repo.commits( None, None, None, -1, None, cmt_date, None, None )
+            team_dict = get_team_dict_from_csv()
+            if ( team_dict ):
                 for cmt in cmts:
-                    cmt = cmt.commit.message
-                    violation_code = is_commit_format( cmt )
+                    msg = 'Processing, please wait...'
+                    update_status_message( msg, 4 )
+                    violation_code = is_commit_format( cmt.commit.message )
                     if ( violation_code == 1 ):
+                        if ( str( cmt.author ) in team_dict ):
+                            author_email = team_dict[ str( cmt.author ) ][ 0 ]
+                            author_manager = team_dict[ str( cmt.author ) ][ 1 ]
+                            manager_email = team_dict[ author_manager ][ 0 ]
+                            emails_list = []
+                            emails_list.append( author_email )
+                            if ( manager_email ):
+                                emails_list.append( manager_email )
+                            commit_url = cmt.url
+                            comments = cmt.comments()
+                            comment_adjustment_found = False
+                            email_sub = "[ commit message violation ] " + \
+                                str( repo.name ) + " " + str( cmt.sha )
+                            email_msg = "Dear " + str( cmt.author ) + \
+                                ", you have not included the reference to the Github" + \
+                                " issue in the prescribed format."
+                            email_msg += "\n\nPlease visit the link below and add the" + \
+                                " issue reference in the comment box."
+                            email_msg += "\n\nCommit URL: " + str( cmt.html_url )
+                            for cmnt in comments:
+                                if ( issue_criteria_input.get() in cmnt.body ):
+                                    comment_adjustment_found = True
+                            if ( comment_adjustment_found == False ):
+                                push_email_to_user( commits_sender_email_input.get(), \
+                                    commits_sender_pwd_input.get(), emails_list, \
+                                    email_sub, email_msg, \
+                                    commits_admin_email_input.get(), 6 )
+                                time.sleep( 5.0 )
+                    elif ( violation_code == 2 ):   # something for later
                         pass
-                    elif ( violation_code == 2 ):
+                    elif ( violation_code == 3 ):   # something for later
                         pass
-                    elif ( violation_code == 3 ):
+                    elif ( violation_code == 4 ):   # something for later
                         pass
-                    elif ( violation_code == 4 ):
-                        pass
-            t = threading.Thread( target = process_commmit_thrd )
-            t.start()
-        except Exception as exc:
-            update_status_message( "Incorrect username / password / repo", 2 )
+                update_status_message( "Commit messages processed!", 5 )
+            else:
+                update_status_message( "Unable to process team CSV!", 2 )
+        t = threading.Thread( target = process_commmit_thrd )
+        t.start()
 
 def sprint_report():
     status_label[ 'text' ] = ''
     status_label.configure( foreground = "red" )
     gh = None
-    gh = login( str( username_input.get() ), str( password_input.get() ) )
-    wb = Workbook()
-    ws = wb.active
-    wb.save( 'lifeprint-reporting.xlsx' )
-    sheet_data_arr = [] # spreadsheet data internal container for checking duplicates
-    arr = [ "Issue", "Assignees", "Status", "St. Pts", "Comment ID", "Author", \
-        "Sprint", "Estimate", "Actual Hours", "Date", "Comments" ]
-    sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
-    if ( gh ):
+    gh_login_success = False
+    try:
+        gh = login( str( username_input.get() ), str( password_input.get() ) )
+        repo_check = gh.repositories()
+        for repo in repo_check:
+            name = repo.name
+        gh_login_success = True
+    except Exception as exc:
+        update_status_message( "Incorrect username / password / repo", 2 )
+        gh_login_success = False
+    if ( gh_login_success ):
+        wb = Workbook()
+        ws = wb.active
+        wb.save( 'lifeprint-reporting.xlsx' )
+        sheet_data_arr = [] # spreadsheet data internal container for checking duplicates
+        arr = [ "Issue", "Assignees", "Status", "St. Pts", "Comment ID", "Author", \
+            "Sprint", "Estimate", "Actual Hours", "Date", "Comments" ]
+        sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
         def process_thread():
-            # try:
             update_status_message( "Processing, please wait...", 1 )
             status_label.configure( foreground = "orange" )
             repo = get_repo_by_name( gh, repo_input.get() )
@@ -384,20 +489,35 @@ def sprint_report():
                                     processed_count += 1
                         else:
                             update_status_message( "Please provide valid dates", 2 )
-            if ( is_processed > 0 ):
+            if ( processed_count > 0 ):
                 update_status_message( "Sprint report generated!", 0 )
                 push_email()
             else:
                 update_status_message( "Nothing to process, review criteria", 2 )
-            # except Exception as exc:
-            #     update_status_message( "Incorrect username / password / repo", 2 )
         t = threading.Thread( target=process_thread )
         t.start()
-    else:
-        update_status_message( "Enter valid username / password / repo", 2 )
 
-main_frame = Frame(root, width = 30, bd = 2, relief = GROOVE)
-main_frame.pack()
+root.geometry('350x460')
+rows = 0
+while rows < 50:
+    root.rowconfigure(rows, weight=1)
+    root.columnconfigure(rows, weight=1)
+    rows += 1
+style = ttk.Style()
+white = "#ffffff"
+style.theme_create( "test", parent="alt", settings={
+        "TNotebook": {"configure": {"tabmargins": [2, 5, 2, 0], "color": white } },
+        "TNotebook.Tab": {
+            "configure": {"padding": [5, 2]},
+            "map":       {"expand": [("selected", [1, 1, 1, 0])] } } } )
+style.theme_use("test")
+nb = ttk.Notebook(root)
+nb.grid(row=1, column=0, columnspan=50, rowspan=49, sticky='NESW')
+main_frame = ttk.Frame(nb)
+nb.add(main_frame, text='Sprint Report')
+commits_frame = ttk.Frame(nb)
+nb.add(commits_frame, text='Commits Report')
+
 right_margin = Frame(main_frame, width = 20)
 right_margin.pack(side = RIGHT)
 left_margin = Frame(main_frame, width = 20)
@@ -410,14 +530,12 @@ username_container = Frame( main_frame, width = 30 )
 username_container.pack()
 password_container = Frame( main_frame, width = 30 )
 password_container.pack()
-
 email_container = Frame( main_frame, width = 30 )
 email_container.pack()
 email_pwd_container = Frame( main_frame, width = 30 )
 email_pwd_container.pack()
 recipent_container = Frame( main_frame, width = 30 )
 recipent_container.pack()
-
 repo_container = Frame( main_frame, width = 30 )
 repo_container.pack()
 sep1 = Frame(main_frame, height = 10)
@@ -441,8 +559,6 @@ sprint_override_label.pack(side = LEFT)
 sprint_override_input = Entry(sprint_override_container, width = 25, \
     borderwidth = 1, font = 'Calibri, 12')
 sprint_override_input.pack(side = RIGHT)
-sep1 = Frame(main_frame, height = 5)
-sep1.pack()
 start_date_container = Frame( main_frame, width = 30 )
 start_date_container.pack()
 start_date_label = Label(start_date_container, width = 25, height = 1, \
@@ -461,11 +577,8 @@ end_date_label.pack(side = LEFT)
 end_date_input = Entry(end_date_container, width = 15, borderwidth = 1, \
     font = 'Calibri, 12')
 end_date_input.pack(side = RIGHT)
-sep1 = Frame(main_frame, height = 5)
-sep1.pack()
 status_label = Label(main_frame, width=35, height=1, text="")
 status_label.pack(side = BOTTOM)
-
 username_label = Label(username_container, width=15, height=1, \
     text="Github username")
 username_label.pack(side = LEFT)
@@ -481,7 +594,6 @@ password_label.pack(side = LEFT)
 password_input = Entry(password_container, show='*',width = 25, \
     borderwidth = 1, font = 'Calibri, 12')
 password_input.pack(side = RIGHT)
-
 email_label = Label(email_container, width=15, height=1, \
     text="Sender Email")
 email_label.pack(side = LEFT)
@@ -500,7 +612,6 @@ recipent_label.pack(side = LEFT)
 recipent_input = Entry(recipent_container, width = 25, \
     borderwidth = 1, font = 'Calibri, 12')
 recipent_input.pack(side = RIGHT)
-
 sep2 = Frame(main_frame, height = 10)
 sep2.pack(side = BOTTOM)
 repo_label = Label(repo_container, width=15, height=1, \
@@ -511,15 +622,68 @@ repo_input = Entry(repo_container, width = 25, \
 repo_input.pack(side = RIGHT)
 exit_button = Button(main_frame, width = 35, bd = 2, text="Quit", command = quit)
 exit_button.pack(side = BOTTOM)
-# planning_report_button = Button(main_frame, width = 35, bd = 2, \
-#     text="Generate Planned Items List", command = planning_report)
-# planning_report_button.pack(side = BOTTOM)
-# commits_report_button = Button(main_frame, width = 35, bd = 2, \
-#     text="Commits Report", command = process_commits)
-# commits_report_button.pack(side = BOTTOM)
 sprint_report_button = Button(main_frame, width = 35, bd = 2, \
     text="Generate Report", command = sprint_report)
 sprint_report_button.pack(side = BOTTOM)
+
+right_margin = Frame(commits_frame, width = 20)
+right_margin.pack(side = RIGHT)
+left_margin = Frame(commits_frame, width = 20)
+left_margin.pack(side = LEFT)
+bot_margin = Frame(commits_frame, height = 30)
+bot_margin.pack(side = BOTTOM)
+top_margin = Frame(commits_frame, height = 20)
+top_margin.pack(side = TOP)
+sep2 = Frame(commits_frame, height = 10)
+sep2.pack(side = BOTTOM)
+issue_criteria_container = Frame( commits_frame, width = 30 )
+issue_criteria_container.pack()
+issue_criteria_label = Label(issue_criteria_container, width=15, height=1, \
+    text="Issue ref. criteria")
+issue_criteria_label.pack(side = LEFT)
+issue_criteria_input = Entry(issue_criteria_container, width = 25, borderwidth = 1, \
+    font = 'Calibri, 12')
+issue_criteria_input.pack(side = RIGHT)
+commits_date_container = Frame( commits_frame, width = 30 )
+commits_date_container.pack()
+commits_date_label = Label(commits_date_container, width = 25, height = 1, \
+    text="Start date [ YYYY-MM-DD ]")
+commits_date_label.pack(side = LEFT)
+commits_date_input = Entry(commits_date_container, width = 15, borderwidth = 1, \
+    font = 'Calibri, 12')
+commits_date_input.pack(side = RIGHT)
+commits_status_label = Label(commits_frame, width=35, height=1, text="")
+commits_status_label.pack(side = BOTTOM)
+sep2 = Frame(commits_frame, height = 20)
+sep2.pack(side = BOTTOM)
+commits_sender_email_container = Frame( commits_frame, width = 30 )
+commits_sender_email_container.pack()
+commits_sender_email_label = Label(commits_sender_email_container, width = 15, height = 1, \
+    text="Sender Email")
+commits_sender_email_label.pack(side = LEFT)
+commits_sender_email_input = Entry(commits_sender_email_container, width = 25, borderwidth = 1, \
+    font = 'Calibri, 12')
+commits_sender_email_input.pack(side = RIGHT)
+commits_sender_pwd_container = Frame( commits_frame, width = 30 )
+commits_sender_pwd_container.pack()
+commits_sender_pwd_label = Label(commits_sender_pwd_container, width = 15, height = 1, \
+    text="Sender Password")
+commits_sender_pwd_label.pack(side = LEFT)
+commits_sender_pwd_input = Entry(commits_sender_pwd_container, width = 25, borderwidth = 1, \
+    font = 'Calibri, 12')
+commits_sender_pwd_input.pack(side = RIGHT)
+commits_admin_email_container = Frame( commits_frame, width = 30 )
+commits_admin_email_container.pack()
+commits_admin_email_label = Label(commits_admin_email_container, width = 15, height = 1, \
+    text="BCC Admin Email")
+commits_admin_email_label.pack(side = LEFT)
+commits_admin_email_input = Entry(commits_admin_email_container, width = 25, borderwidth = 1, \
+    font = 'Calibri, 12')
+commits_admin_email_input.pack(side = RIGHT)
+commits_button = Button(commits_frame, width = 35, bd = 2, \
+    text="Commit Messages Report", command = commits_report)
+commits_button.pack(side = BOTTOM)
+
 root.title("Github Project Reporting")
 root.resizable(width = FALSE, height = FALSE)
 root.lift()
