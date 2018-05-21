@@ -327,7 +327,9 @@ def get_team_dict_from_csv():
 # 2) check if 'what, why, impact' are present in the commit message
 def is_commit_format( cmt ):
     violation_code = 0
-    if ( not issue_criteria_input.get() in cmt ) and ( not "Merge" in cmt ):
+    if ( not str( issue_criteria_input.get() ).lower() in str( cmt ).lower() ) \
+        and ( not str( "Merge" ).lower() in str( cmt ).lower() ) \
+        and ( not str( "Rebasing" ).lower() in str( cmt ).lower() ):
         violation_code = 1
     return violation_code
 
@@ -408,7 +410,8 @@ def commits_report():
                                 " issue reference in the comment box."
                             email_msg += "\n\nCommit URL: " + str( cmt.html_url )
                             for cmnt in comments:
-                                if ( issue_criteria_input.get() in cmnt.body ):
+                                if ( str( issue_criteria_input.get() ).lower() \
+                                    in str( cmnt.body ).lower() ):
                                     comment_adjustment_found = True
                             if ( comment_adjustment_found == False ):
                                 push_email_to_user( commits_sender_email_input.get(), \
