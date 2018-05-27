@@ -1,3 +1,4 @@
+from __future__ import division
 from github3 import login
 import datetime
 import calendar
@@ -13,17 +14,107 @@ import threading
 import smtplib
 import csv
 from email.mime.text import MIMEText
+import math
 
 root = Tk()
 
 # the csv file is formatted as follows:
-# github username | user email | user manager's username
+# github username | user email | user manager's username | team name
 # this 3 column csv is used to get the emails of the
 # users who have violated the commit message format, and
 # an email is sent to them and their manager about the
 # violating commit. the csv file should reside in the
 # same folder this program is being run from.
 CSV_FILE_NAME = 'team'
+
+# a class for hourly burndown data structure and xls publishing
+class Burndown:
+    # process the ideal hours array incrementally and push it to a date-hours dict
+    def process_ideal_by_inc( self, estimate_inc ):
+        self.estimate += estimate_inc
+        self.interval = round( float( self.estimate / self.days ), 3 )
+        temp = self.interval
+        inc_date = self.start_date
+        for num in range( self.days ):
+            self.date_hours_ideal_map[ inc_date ] += estimate_inc
+            self.date_hours_ideal_map[ inc_date ] = self.estimate - temp
+            temp += self.interval
+            if ( inc_date.weekday() == 4 ):
+                inc_date += datetime.timedelta( days = 3 )
+            else:
+                inc_date += datetime.timedelta( days = 1 )
+    def process_actual_item( self, actual_hours, date ):
+        inc_date = self.start_date
+        if ( date.weekday() != 5 ) and ( date.weekday() != 6 ):
+            self.date_hours_actual_map[ date ] += actual_hours
+    def postprocess( self ):
+        inc_date = self.start_date
+        prev_date = None
+        prev_hours = self.estimate
+        for num in range( self.days ):
+            if ( inc_date.weekday() != 5 ) and ( inc_date.weekday() != 6 ):
+                if ( prev_date ):
+                    prev_hours = self.date_hours_actual_map[ prev_date ]
+                temp = prev_hours - self.date_hours_actual_map[ inc_date ]
+                self.date_hours_actual_map[ inc_date ] = temp
+                prev_date = inc_date
+            if ( inc_date.weekday() == 4 ):
+                inc_date += datetime.timedelta( days = 3 )
+            else:
+                inc_date += datetime.timedelta( days = 1 )
+    def publish_burndown_xls( self, wb, ws ):
+        sheet_data_arr = [ ]
+        arr = [ "Ideal", "Actual" ]
+        sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
+        inc_date = self.start_date
+        for num in range( self.days ):
+            arr = [ self.date_hours_ideal_map[ inc_date ], \
+                self.date_hours_actual_map[ inc_date ] ]
+            sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
+            if ( inc_date.weekday() == 4 ):
+                inc_date += datetime.timedelta( days = 3 )
+            else:
+                inc_date += datetime.timedelta( days = 1 )
+    def print_completed_burndown( self ):
+        inc_date = self.start_date
+        for num in range( self.days ):
+            print( inc_date )
+            print( self.date_hours_ideal_map[ inc_date ] )
+            print( self.date_hours_actual_map[ inc_date ] )
+            print( "--------------" )
+            if ( inc_date.weekday() == 4 ):
+                inc_date += datetime.timedelta( days = 3 )
+            else:
+                inc_date += datetime.timedelta( days = 1 )
+    def __init__( self, start_date, end_date ):
+        self.ideal_burndown_arr = []
+        self.actual_burndown_arr = []
+        self.start_date = start_date
+        self.end_date = end_date
+        # this dict will map date keys to an array of ideal and actual hours
+        # data structure ---> { date : [ ideal_hours, actual_hours ] }
+        self.date_hours_ideal_map = {}
+        self.date_hours_actual_map = {}
+        self.days = 1
+        self.start_date = start_date
+        self.end_date = end_date
+        self.curr_actual_remaining = 0
+        self.estimate = 0
+        temp_date = self.start_date
+        if ( self.start_date < self.end_date ):
+            while ( temp_date != self.end_date ):
+                if ( temp_date.weekday() != 5 ) and ( temp_date.weekday() != 6 ):
+                    self.days += 1
+                temp_date += datetime.timedelta( days = 1 )
+        inc_date = self.start_date
+        for num in range( self.days ):
+            # self.date_hours_map_dict[ inc_date ] = [ 0, 0 ]
+            self.date_hours_ideal_map[ inc_date ] = 0
+            self.date_hours_actual_map[ inc_date ] = 0
+            if ( inc_date.weekday() == 4 ):
+                inc_date += datetime.timedelta( days = 3 )
+            else:
+                inc_date += datetime.timedelta( days = 1 )
 
 # email notification on report generation completion as traversing the
 # issues in the repository can take time
@@ -113,6 +204,7 @@ def get_curr_sprint_info( repo ):
     open_stones = repo.milestones( 'open' )
     closed_stones = repo.milestones( 'closed' )
     criteria = 'Sprint'
+    num_days = int( sprint_weeks_input.get() ) * 5
     if ( sprint_override_input.get() != '' ):
         criteria = sprint_override_input.get()
     for stone in closed_stones:
@@ -124,12 +216,19 @@ def get_curr_sprint_info( repo ):
     sprint_issues_count = curr_sprint.open_issues_count + \
         curr_sprint.closed_issues_count
     sprint_end_date = curr_sprint.due_on.date()
+    start_date = sprint_end_date
+    for num in range( num_days - 1 ):
+        if ( start_date.weekday() == 0 ):
+            start_date += datetime.timedelta( days = -3 )
+        else:
+            start_date += datetime.timedelta( days = -1 )
     sprint_info = { 'object': curr_sprint, 'issue-count': sprint_issues_count, \
-        'end-date': sprint_end_date }
+        'end-date': sprint_end_date, 'start-date': start_date }
     return sprint_info
 
 def is_date_within_sprint( sprint_info, verify_date ):
-    if ( verify_date <= sprint_info[ 'end-date' ] ):
+    if ( verify_date <= sprint_info[ 'end-date' ] ) and \
+        ( verify_date >= sprint_info[ 'start-date' ] ):
         return True
     else:
         return False
@@ -179,8 +278,6 @@ def parse_comment( text ):
                         loc.append( sub_item.find( 'hrs' ) )
                         full_hours_text = str( sub_item )
                         hours_text_arr.append( full_hours_text )
-                        # breakout = True
-                        # break
     for item in hours_text_arr:
         if ( loc.count > 0 ):
             prefix_cleaned = item[ :-3 ]
@@ -214,7 +311,6 @@ def is_item_in_sheet( sheet_data_arr, item, col_num ):
     if ( sheet_data_arr ):
         for row in sheet_data_arr:
             if ( row[ col_num ] == item ):
-                print( item )
                 found = True
                 break
     return found
@@ -224,7 +320,7 @@ def is_item_in_sheet( sheet_data_arr, item, col_num ):
 # hours which are appended to the worksheet array as well as the sheet
 # itself.
 def process_comments_and_report( ws, wb, sheet_data_arr, issue, comments, \
-        sprint_info = None, start_date = None, end_date = None ):
+        sprint_info = None, start_date = None, end_date = None, bd = None ):
     processed_count = 0
     cmnt_count = 0
     some_hours_found = False
@@ -233,6 +329,8 @@ def process_comments_and_report( ws, wb, sheet_data_arr, issue, comments, \
     status = issue.state
     sprint = str( issue.milestone )
     est = get_issue_estimate( issue )
+    if ( bd ):
+        bd.process_ideal_by_inc( est )
     for comment in comments:
         cmnt_count += 1
         comment_body = comment.body
@@ -243,12 +341,13 @@ def process_comments_and_report( ws, wb, sheet_data_arr, issue, comments, \
         for comment in comments:
             comment_date = comment.created_at.date()
             process = False
-            if ( sprint_info ):
+            if ( sprint_info ) and ( issue_retrieval_method_var.get() == 1 ):
                 if ( is_date_within_sprint( sprint_info, comment_date ) ):
                     process = True
-            elif ( start_date ) and ( end_date ):
-                if ( is_date_within_range( start_date, end_date, comment_date ) ):
-                    process = True
+            elif ( issue_retrieval_method_var.get() == 2 ):
+                if ( start_date ) and ( end_date ):
+                    if ( is_date_within_range( start_date, end_date, comment_date ) ):
+                        process = True
             if ( process ):
                 comment_body = comment.body
                 comment_id = comment.id
@@ -260,6 +359,8 @@ def process_comments_and_report( ws, wb, sheet_data_arr, issue, comments, \
                             comment_date, notes ]
                         sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
                         processed_count += 1
+                        if ( bd ):
+                            bd.process_actual_item( hours, comment_date )
     else:
         # put the issue in the list anyway even if it doesn't have any comments
         if ( sprint_info ):
@@ -431,6 +532,15 @@ def commits_report():
         t = threading.Thread( target = process_commmit_thrd )
         t.start()
 
+def team_check( issue, team_name ):
+    team_name = str( team_name ).lower()
+    labels = issue.labels()
+    is_team_issue = False
+    for lbl in labels:
+        if ( team_name == str( lbl.name ).lower() ):
+            is_team_issue = True
+    return is_team_issue
+
 def sprint_report():
     status_label[ 'text' ] = ''
     status_label.configure( foreground = "red" )
@@ -448,6 +558,8 @@ def sprint_report():
     if ( gh_login_success ):
         wb = Workbook()
         ws = wb.active
+        ws.title = 'Sprint Report'
+        bd_ws = wb.create_sheet( 'Burndown' )
         wb.save( 'lifeprint-reporting.xlsx' )
         sheet_data_arr = [] # spreadsheet data internal container for checking duplicates
         arr = [ "Issue", "Assignees", "Status", "St. Pts", "Comment ID", "Author", \
@@ -457,50 +569,67 @@ def sprint_report():
             update_status_message( "Processing, please wait...", 1 )
             status_label.configure( foreground = "orange" )
             repo = get_repo_by_name( gh, repo_input.get() )
+            # repo.milestone().open_issues
             repo_issues = repo.issues( None, 'all' )
             sprint_info = get_curr_sprint_info( repo )
+            bd = None
+            if ( sprint_info ):
+                bd = Burndown( sprint_info[ 'start-date' ], sprint_info[ 'end-date' ] )
             issues_count_inc = 0
             is_processed = False
             processed_count = 0
             for issue in repo_issues:
-                msg = 'Processing #' + str( issue.number ) + ', please wait...'
-                update_status_message( msg, 1 )
-                parent_issue = None # to be worked on later
-                if ( issue_retrieval_method_var.get() == 1 ):
-                    if ( issue.milestone ):
-                        if ( issue.milestone == sprint_info[ 'object' ] ):
-                            issues_count_inc += 1
-                            comments = issue.comments()
-                            is_processed = process_comments_and_report( ws, wb, \
-                                sheet_data_arr, issue, comments, sprint_info, \
-                                None, None )
-                            if ( is_processed ):
-                                processed_count += 1
-                            if ( issues_count_inc == sprint_info[ 'issue-count' ] ):
-                                break
-                elif ( issue_retrieval_method_var.get() == 2 ):
-                    if ( start_date_input.get() ) and ( end_date_input.get() ):
-                        created_start_date = get_date_from_input( start_date_input.get() )
-                        created_end_date = get_date_from_input( end_date_input.get() )
-                        if ( created_start_date ) and ( created_end_date ):
-                            comments = issue.comments()
-                            if ( comments ):
+                process = True
+                if ( str( team_input.get() ) != '' ):
+                    if ( team_check( issue, team_input.get() ) ):
+                        process = True
+                    else:
+                        process = False
+                if ( process ):
+                    msg = 'Processing #' + str( issue.number ) + ', please wait...'
+                    update_status_message( msg, 1 )
+                    parent_issue = None # to be worked on later
+                    if ( issue_retrieval_method_var.get() == 1 ):
+                        if ( issue.milestone ):
+                            if ( issue.milestone == sprint_info[ 'object' ] ):
+                                issues_count_inc += 1
+                                comments = issue.comments()
                                 is_processed = process_comments_and_report( ws, wb, \
-                                    sheet_data_arr, issue, comments, None, \
-                                    created_start_date, created_end_date )
+                                    sheet_data_arr, issue, comments, sprint_info, \
+                                    None, None, bd )
                                 if ( is_processed ):
                                     processed_count += 1
-                        else:
-                            update_status_message( "Please provide valid dates", 2 )
+                                if ( str( isscount_override_input.get() ) != '' ):
+                                    if ( issues_count_inc == int( isscount_override_input.get() ) ):
+                                        break
+                                else:
+                                    if ( issues_count_inc == sprint_info[ 'issue-count' ] ):
+                                        break
+                    elif ( issue_retrieval_method_var.get() == 2 ):
+                        if ( start_date_input.get() ) and ( end_date_input.get() ):
+                            created_start_date = get_date_from_input( start_date_input.get() )
+                            created_end_date = get_date_from_input( end_date_input.get() )
+                            if ( created_start_date ) and ( created_end_date ):
+                                comments = issue.comments()
+                                if ( comments ):
+                                    is_processed = process_comments_and_report( ws, wb, \
+                                        sheet_data_arr, issue, comments, None, \
+                                        created_start_date, created_end_date, None )
+                                    if ( is_processed ):
+                                        processed_count += 1
+                            else:
+                                update_status_message( "Please provide valid dates", 2 )
             if ( processed_count > 0 ):
                 update_status_message( "Sprint report generated!", 0 )
+                bd.postprocess()
+                bd.publish_burndown_xls( wb, bd_ws )
                 push_email()
             else:
                 update_status_message( "Nothing to process, review criteria", 2 )
         t = threading.Thread( target=process_thread )
         t.start()
 
-root.geometry('350x460')
+root.geometry('370x460')
 rows = 0
 while rows < 50:
     root.rowconfigure(rows, weight=1)
@@ -508,14 +637,16 @@ while rows < 50:
     rows += 1
 style = ttk.Style()
 white = "#ffffff"
-style.theme_create( "test", parent="alt", settings={
-        "TNotebook": {"configure": {"tabmargins": [2, 5, 2, 0], "color": white } },
+style.theme_create( "test", parent="alt", settings = {
+        "TNotebook": { "configure": { "tabmargins": [ 2, 5, 2, 0 ], "color": white } },
         "TNotebook.Tab": {
-            "configure": {"padding": [5, 2]},
-            "map":       {"expand": [("selected", [1, 1, 1, 0])] } } } )
+            "configure": { "padding": [ 5, 2 ] },
+            "map":       { "expand": [ ( "selected", [ 1, 1, 1, 0 ] ) ] } } } )
 style.theme_use("test")
 nb = ttk.Notebook(root)
 nb.grid(row=1, column=0, columnspan=50, rowspan=49, sticky='NESW')
+settings_frame = ttk.Frame(nb)
+nb.add(settings_frame, text='Settings')
 main_frame = ttk.Frame(nb)
 nb.add(main_frame, text='Sprint Report')
 commits_frame = ttk.Frame(nb)
@@ -529,18 +660,50 @@ bot_margin = Frame(main_frame, height = 10)
 bot_margin.pack(side = BOTTOM)
 top_margin = Frame(main_frame, height = 20)
 top_margin.pack(side = TOP)
-username_container = Frame( main_frame, width = 30 )
+
+right_margin = Frame(settings_frame, width = 20)
+right_margin.pack(side = RIGHT)
+left_margin = Frame(settings_frame, width = 20)
+left_margin.pack(side = LEFT)
+bot_margin = Frame(settings_frame, height = 10)
+bot_margin.pack(side = BOTTOM)
+top_margin = Frame(settings_frame, height = 20)
+top_margin.pack(side = TOP)
+
+username_container = Frame( settings_frame, width = 30 )
 username_container.pack()
-password_container = Frame( main_frame, width = 30 )
+password_container = Frame( settings_frame, width = 30 )
 password_container.pack()
+repo_container = Frame( settings_frame, width = 30 )
+repo_container.pack()
+username_label = Label(username_container, width=15, height=1, \
+    text="Github username")
+username_label.pack(side = LEFT)
+username_input = Entry(username_container, width = 25, borderwidth = 1, \
+    font = 'Calibri, 12')
+username_input.pack(side = RIGHT)
+username_input.focus()
+sep2 = Frame(main_frame, height = 10)
+sep2.pack(side = BOTTOM)
+password_label = Label(password_container, width=15, height=1, \
+    text="Github password")
+password_label.pack(side = LEFT)
+password_input = Entry(password_container, show='*',width = 25, \
+    borderwidth = 1, font = 'Calibri, 12')
+password_input.pack(side = RIGHT)
+repo_label = Label(repo_container, width=15, height=1, \
+    text="Repository name")
+repo_label.pack(side = LEFT)
+repo_input = Entry(repo_container, width = 25, \
+    borderwidth = 1, font = 'Calibri, 12')
+repo_input.pack(side = RIGHT)
+
 email_container = Frame( main_frame, width = 30 )
 email_container.pack()
 email_pwd_container = Frame( main_frame, width = 30 )
 email_pwd_container.pack()
 recipent_container = Frame( main_frame, width = 30 )
 recipent_container.pack()
-repo_container = Frame( main_frame, width = 30 )
-repo_container.pack()
 sep1 = Frame(main_frame, height = 10)
 sep1.pack()
 radio_butt_frame = Frame(main_frame, width = 30)
@@ -554,6 +717,16 @@ rad2 = Radiobutton(radio_butt_frame, text="Report by dates", \
 rad2.pack(side = LEFT)
 sep1 = Frame(main_frame, height = 10)
 sep1.pack()
+
+team_container = Frame( main_frame, width = 30 )
+team_container.pack()
+team_label = Label(team_container, width = 15, \
+    height = 1, text="Team name")
+team_label.pack(side = LEFT)
+team_input = Entry(team_container, width = 25, \
+    borderwidth = 1, font = 'Calibri, 12')
+team_input.pack(side = RIGHT)
+
 sprint_override_container = Frame( main_frame, width = 30 )
 sprint_override_container.pack()
 sprint_override_label = Label(sprint_override_container, width = 15, \
@@ -562,6 +735,25 @@ sprint_override_label.pack(side = LEFT)
 sprint_override_input = Entry(sprint_override_container, width = 25, \
     borderwidth = 1, font = 'Calibri, 12')
 sprint_override_input.pack(side = RIGHT)
+
+isscount_override_container = Frame( main_frame, width = 30 )
+isscount_override_container.pack()
+isscount_override_label = Label(isscount_override_container, width = 15, \
+    height = 1, text="issue count override")
+isscount_override_label.pack(side = LEFT)
+isscount_override_input = Entry(isscount_override_container, width = 25, \
+    borderwidth = 1, font = 'Calibri, 12')
+isscount_override_input.pack(side = RIGHT)
+
+sprint_weeks_container = Frame( main_frame, width = 30 )
+sprint_weeks_container.pack()
+sprint_weeks_label = Label(sprint_weeks_container, width = 15, \
+    height = 1, text="Sprint weeks")
+sprint_weeks_label.pack(side = LEFT)
+sprint_weeks_input = Entry(sprint_weeks_container, width = 25, \
+    borderwidth = 1, font = 'Calibri, 12')
+sprint_weeks_input.insert( 0, '2' )
+sprint_weeks_input.pack(side = RIGHT)
 start_date_container = Frame( main_frame, width = 30 )
 start_date_container.pack()
 start_date_label = Label(start_date_container, width = 25, height = 1, \
@@ -582,21 +774,6 @@ end_date_input = Entry(end_date_container, width = 15, borderwidth = 1, \
 end_date_input.pack(side = RIGHT)
 status_label = Label(main_frame, width=35, height=1, text="")
 status_label.pack(side = BOTTOM)
-username_label = Label(username_container, width=15, height=1, \
-    text="Github username")
-username_label.pack(side = LEFT)
-username_input = Entry(username_container, width = 25, borderwidth = 1, \
-    font = 'Calibri, 12')
-username_input.pack(side = RIGHT)
-username_input.focus()
-sep2 = Frame(main_frame, height = 10)
-sep2.pack(side = BOTTOM)
-password_label = Label(password_container, width=15, height=1, \
-    text="Github password")
-password_label.pack(side = LEFT)
-password_input = Entry(password_container, show='*',width = 25, \
-    borderwidth = 1, font = 'Calibri, 12')
-password_input.pack(side = RIGHT)
 email_label = Label(email_container, width=15, height=1, \
     text="Sender Email")
 email_label.pack(side = LEFT)
@@ -617,12 +794,6 @@ recipent_input = Entry(recipent_container, width = 25, \
 recipent_input.pack(side = RIGHT)
 sep2 = Frame(main_frame, height = 10)
 sep2.pack(side = BOTTOM)
-repo_label = Label(repo_container, width=15, height=1, \
-    text="Repository name")
-repo_label.pack(side = LEFT)
-repo_input = Entry(repo_container, width = 25, \
-    borderwidth = 1, font = 'Calibri, 12')
-repo_input.pack(side = RIGHT)
 exit_button = Button(main_frame, width = 35, bd = 2, text="Quit", command = quit)
 exit_button.pack(side = BOTTOM)
 sprint_report_button = Button(main_frame, width = 35, bd = 2, \
