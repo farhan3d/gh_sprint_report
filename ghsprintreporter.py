@@ -26,6 +26,7 @@ root = Tk()
 # violating commit. the csv file should reside in the
 # same folder this program is being run from.
 CSV_FILE_NAME = 'team'
+NUM_BUSINESS_DAYS_PER_WEEK = 5
 
 # a class for hourly burndown data structure and xls publishing
 class Burndown:
@@ -47,30 +48,37 @@ class Burndown:
         inc_date = self.start_date
         if ( date.weekday() != 5 ) and ( date.weekday() != 6 ):
             self.date_hours_actual_map[ date ] += actual_hours
-    def postprocess( self ):
+            self.date_hours_burnup_map[ date ] += actual_hours
+    def post_process( self ):
         inc_date = self.start_date
         prev_date = None
         prev_hours = self.estimate
+        burnup_prev_hours = 0
         for num in range( self.days ):
             if ( inc_date.weekday() != 5 ) and ( inc_date.weekday() != 6 ):
                 if ( prev_date ):
                     prev_hours = self.date_hours_actual_map[ prev_date ]
+                    burnup_prev_hours = self.date_hours_burnup_map[ prev_date ]
                 temp = prev_hours - self.date_hours_actual_map[ inc_date ]
                 self.date_hours_actual_map[ inc_date ] = temp
+                self.date_hours_burnup_map[ inc_date ] += burnup_prev_hours
                 prev_date = inc_date
             if ( inc_date.weekday() == 4 ):
                 inc_date += datetime.timedelta( days = 3 )
             else:
                 inc_date += datetime.timedelta( days = 1 )
-    def publish_burndown_xls( self, wb, ws ):
+    def burndown_data_to_sheet_obj( self, sheet ):
         sheet_data_arr = [ ]
-        arr = [ "Ideal", "Actual" ]
-        sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
+        arr = [ "Ideal", "Burndown", "Burnup" ]
+        # sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
+        sheet.add_data_row_bd( arr )
         inc_date = self.start_date
         for num in range( self.days ):
             arr = [ self.date_hours_ideal_map[ inc_date ], \
-                self.date_hours_actual_map[ inc_date ] ]
-            sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
+                self.date_hours_actual_map[ inc_date ], \
+                self.date_hours_burnup_map[ inc_date ] ]
+            # sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
+            sheet.add_data_row_bd( arr )
             if ( inc_date.weekday() == 4 ):
                 inc_date += datetime.timedelta( days = 3 )
             else:
@@ -78,23 +86,18 @@ class Burndown:
     def print_completed_burndown( self ):
         inc_date = self.start_date
         for num in range( self.days ):
-            print( inc_date )
-            print( self.date_hours_ideal_map[ inc_date ] )
-            print( self.date_hours_actual_map[ inc_date ] )
-            print( "--------------" )
             if ( inc_date.weekday() == 4 ):
                 inc_date += datetime.timedelta( days = 3 )
             else:
                 inc_date += datetime.timedelta( days = 1 )
     def __init__( self, start_date, end_date ):
-        self.ideal_burndown_arr = []
-        self.actual_burndown_arr = []
         self.start_date = start_date
         self.end_date = end_date
         # this dict will map date keys to an array of ideal and actual hours
         # data structure ---> { date : [ ideal_hours, actual_hours ] }
         self.date_hours_ideal_map = {}
         self.date_hours_actual_map = {}
+        self.date_hours_burnup_map = {}
         self.days = 1
         self.start_date = start_date
         self.end_date = end_date
@@ -111,10 +114,36 @@ class Burndown:
             # self.date_hours_map_dict[ inc_date ] = [ 0, 0 ]
             self.date_hours_ideal_map[ inc_date ] = 0
             self.date_hours_actual_map[ inc_date ] = 0
+            self.date_hours_burnup_map[ inc_date ] = 0
             if ( inc_date.weekday() == 4 ):
                 inc_date += datetime.timedelta( days = 3 )
             else:
                 inc_date += datetime.timedelta( days = 1 )
+
+class ReportSheet:
+    def __init__( self, name, teamArr = None ):
+        self.name = name
+        self.wb = Workbook()
+        self.ws = self.wb.active
+        self.ws.title = 'Sprint Report'
+        self.data = [ ]
+        self.bd_data = [ ]
+        # if ( teamArr ):
+        #     for item in teamArr:
+        #         self.bd_ws = self.wb.create_sheet( str( item ) + ' ' + 'Burndown' )
+        # else:
+        self.bd_ws = self.wb.create_sheet( 'Burndown' )
+        self.wb.save( name + ".xlsx" )
+    def add_data_row( self, arr ):
+        self.data.append( arr )
+    def add_data_row_bd( self, arr ):
+        self.bd_data.append( arr )
+    def post_process( self ):
+        for item in self.data:
+            self.ws.append( item )
+        for item in self.bd_data:
+            self.bd_ws.append( item )
+        self.wb.save( self.name + ".xlsx" )
 
 # email notification on report generation completion as traversing the
 # issues in the repository can take time
@@ -197,14 +226,27 @@ def get_repo_by_name( gh, name ):
             ret_repo = repo
     return ret_repo
 
+def get_sprint_from_issue( issue ):
+    curr_sprint = issue.milestone
+    sprint_info = None
+    if ( curr_sprint ):
+        sprint_end_date = curr_sprint.due_on.date()
+        start_date = sprint_end_date
+        sprint_issues_count = curr_sprint.open_issues_count + \
+                curr_sprint.closed_issues_count
+        sprint_info = { 'object': curr_sprint, 'issue-count': sprint_issues_count, \
+                'end-date': sprint_end_date, 'start-date': start_date }
+    return sprint_info
+
 # this will return a dictionary containing the actual sprint object,
 # the number of issues within the sprint, and the due date.
 def get_curr_sprint_info( repo ):
     curr_sprint = None
+    sprint_info = None
     open_stones = repo.milestones( 'open' )
     closed_stones = repo.milestones( 'closed' )
     criteria = 'Sprint'
-    num_days = int( sprint_weeks_input.get() ) * 5
+    num_days = int( sprint_weeks_input.get() ) * NUM_BUSINESS_DAYS_PER_WEEK
     if ( sprint_override_input.get() != '' ):
         criteria = sprint_override_input.get()
     for stone in closed_stones:
@@ -213,17 +255,18 @@ def get_curr_sprint_info( repo ):
     for stone in open_stones:
         if ( criteria in str( stone ) ):
             curr_sprint = stone
-    sprint_issues_count = curr_sprint.open_issues_count + \
-        curr_sprint.closed_issues_count
-    sprint_end_date = curr_sprint.due_on.date()
-    start_date = sprint_end_date
-    for num in range( num_days - 1 ):
-        if ( start_date.weekday() == 0 ):
-            start_date += datetime.timedelta( days = -3 )
-        else:
-            start_date += datetime.timedelta( days = -1 )
-    sprint_info = { 'object': curr_sprint, 'issue-count': sprint_issues_count, \
-        'end-date': sprint_end_date, 'start-date': start_date }
+    if ( curr_sprint ):
+        sprint_issues_count = curr_sprint.open_issues_count + \
+            curr_sprint.closed_issues_count
+        sprint_end_date = curr_sprint.due_on.date()
+        start_date = sprint_end_date
+        for num in range( num_days - 1 ):
+            if ( start_date.weekday() == 0 ):
+                start_date += datetime.timedelta( days = -3 )
+            else:
+                start_date += datetime.timedelta( days = -1 )
+        sprint_info = { 'object': curr_sprint, 'issue-count': sprint_issues_count, \
+            'end-date': sprint_end_date, 'start-date': start_date }
     return sprint_info
 
 def is_date_within_sprint( sprint_info, verify_date ):
@@ -298,11 +341,8 @@ def comment_id_check( gs, comment ):
 def process_sheet( ws, wb, arr, sheet_data_arr ):
     ws.append( arr )
     sheet_data_arr.append( arr )
-    wb.save( 'lifeprint-reporting.xlsx' )
+    wb.save( 'report.xlsx' )
     return sheet_data_arr
-
-def is_item_in_sheet_test( sheet_data_arr, item, col_num ):
-    return False
 
 def is_item_in_sheet( sheet_data_arr, item, col_num ):
     found = False
@@ -319,7 +359,7 @@ def is_item_in_sheet( sheet_data_arr, item, col_num ):
 # has comments or not, then parses any available comments to check for
 # hours which are appended to the worksheet array as well as the sheet
 # itself.
-def process_comments_and_report( ws, wb, sheet_data_arr, issue, comments, \
+def process_comments_and_report( sheet, issue, comments, \
         sprint_info = None, start_date = None, end_date = None, bd = None ):
     processed_count = 0
     cmnt_count = 0
@@ -353,26 +393,34 @@ def process_comments_and_report( ws, wb, sheet_data_arr, issue, comments, \
                 comment_id = comment.id
                 hours, notes = parse_comment( comment_body )
                 if ( hours != None ) and ( hours != 0 ):
-                    if ( not is_item_in_sheet( sheet_data_arr, comment_id, 1 ) ):
+                    if ( not is_item_in_sheet( sheet.data, comment_id, 1 ) ):
                         arr = [ issue.number, assignees, status, stry_pnts, \
                             comment_id, str( comment.user ), sprint, est, hours, \
                             comment_date, notes ]
-                        sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
+                        # sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
+                        sheet.add_data_row( arr )
                         processed_count += 1
                         if ( bd ):
                             bd.process_actual_item( hours, comment_date )
     else:
         # put the issue in the list anyway even if it doesn't have any comments
-        if ( sprint_info ):
-            if ( not is_item_in_sheet( sheet_data_arr, issue.number, 0 ) ):
+        # only for the case when a sprint report is required, and not a date
+        # range report. For the case of a date range report, this would not be
+        # applicable since we need only report issues which have had comments
+        # and they can be issues with or without sprint assignments.
+        if ( sprint_info ) and ( issue_retrieval_method_var.get() == 1 ):
+            if ( not is_item_in_sheet( sheet.data, issue.number, 0 ) ):
                 arr = [ issue.number, assignees, status, stry_pnts, None, None, sprint, \
                     est, None, None, None ]
-                sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
+                # sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
+                sheet.add_data_row( arr )
                 processed_count += 1
     if ( processed_count > 0 ):
-        return True, sheet_data_arr
+        # return True, sheet_data_arr
+        return True
     else:
-        return False, sheet_data_arr
+        # return False, sheet_data_arr
+        return False
 
 def disable_process_buttons():
     sprint_report_button.config( state='disabled' )
@@ -541,6 +589,20 @@ def team_check( issue, team_name ):
             is_team_issue = True
     return is_team_issue
 
+def sprint_report_main():
+    if ( issue_retrieval_method_var.get() == 1 ):
+        if ( sprint_override_input.get() != '' ) and \
+            ( sprint_weeks_input.get() != '' ) and \
+            ( int( sprint_weeks_input.get() ) > 0 ):
+            sprint_report()
+        else:
+            update_status_message( "Enter sprint name and weeks count", 2 )
+    elif ( issue_retrieval_method_var.get() == 2 ):
+        if ( start_date_input.get() != '' ) and ( end_date_input.get() != '' ):
+            sprint_report()
+        else:
+            update_status_message( "Enter start and end dates", 2 )
+
 def sprint_report():
     status_label[ 'text' ] = ''
     status_label.configure( foreground = "red" )
@@ -556,80 +618,116 @@ def sprint_report():
         update_status_message( "Incorrect username / password / repo", 2 )
         gh_login_success = False
     if ( gh_login_success ):
-        wb = Workbook()
-        ws = wb.active
-        ws.title = 'Sprint Report'
-        bd_ws = wb.create_sheet( 'Burndown' )
-        wb.save( 'lifeprint-reporting.xlsx' )
+        report_sheet = ReportSheet( 'report' )
         sheet_data_arr = [] # spreadsheet data internal container for checking duplicates
         arr = [ "Issue", "Assignees", "Status", "St. Pts", "Comment ID", "Author", \
             "Sprint", "Estimate", "Actual Hours", "Date", "Comments" ]
-        sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
+        report_sheet.add_data_row( arr )
         def process_thread():
+            terminate = False
             update_status_message( "Processing, please wait...", 1 )
             status_label.configure( foreground = "orange" )
             repo = get_repo_by_name( gh, repo_input.get() )
-            # repo.milestone().open_issues
-            repo_issues = repo.issues( None, 'all' )
-            sprint_info = get_curr_sprint_info( repo )
-            bd = None
-            if ( sprint_info ):
-                bd = Burndown( sprint_info[ 'start-date' ], sprint_info[ 'end-date' ] )
-            issues_count_inc = 0
-            is_processed = False
-            processed_count = 0
-            for issue in repo_issues:
-                process = True
-                if ( str( team_input.get() ) != '' ):
-                    if ( team_check( issue, team_input.get() ) ):
-                        process = True
+            if ( repo ):
+                repo_issues = repo.issues( None, 'all' )
+                sprint_info = None
+                bd = None
+                if ( issue_retrieval_method_var.get() == 1 ):
+                    sprint_info = get_curr_sprint_info( repo )
+                    if ( sprint_info == None ):
+                        update_status_message( "Invalid sprint name!", 2 )
+                        terminate = True
                     else:
-                        process = False
-                if ( process ):
-                    msg = 'Processing #' + str( issue.number ) + ', please wait...'
-                    update_status_message( msg, 1 )
-                    parent_issue = None # to be worked on later
-                    if ( issue_retrieval_method_var.get() == 1 ):
-                        if ( issue.milestone ):
-                            if ( issue.milestone == sprint_info[ 'object' ] ):
-                                issues_count_inc += 1
-                                comments = issue.comments()
-                                is_processed = process_comments_and_report( ws, wb, \
-                                    sheet_data_arr, issue, comments, sprint_info, \
-                                    None, None, bd )
-                                if ( is_processed ):
-                                    processed_count += 1
-                                if ( str( isscount_override_input.get() ) != '' ):
-                                    if ( issues_count_inc == int( isscount_override_input.get() ) ):
-                                        break
-                                else:
-                                    if ( issues_count_inc == sprint_info[ 'issue-count' ] ):
-                                        break
-                    elif ( issue_retrieval_method_var.get() == 2 ):
-                        if ( start_date_input.get() ) and ( end_date_input.get() ):
-                            created_start_date = get_date_from_input( start_date_input.get() )
-                            created_end_date = get_date_from_input( end_date_input.get() )
-                            if ( created_start_date ) and ( created_end_date ):
-                                comments = issue.comments()
-                                if ( comments ):
-                                    is_processed = process_comments_and_report( ws, wb, \
-                                        sheet_data_arr, issue, comments, None, \
-                                        created_start_date, created_end_date, None )
-                                    if ( is_processed ):
-                                        processed_count += 1
+                        bd = Burndown( sprint_info[ 'start-date' ], sprint_info[ 'end-date' ] )
+                else:
+                    if ( get_date_from_input( start_date_input.get() ) ) and \
+                        get_date_from_input( end_date_input.get() ):
+                        bd = Burndown( get_date_from_input( start_date_input.get() ), \
+                            get_date_from_input( end_date_input.get() ) )
+                    else:
+                        update_status_message( "Invalid start or end dates!", 2 )
+                        terminate = True
+                issues_count_inc = 0
+                is_processed = False
+                processed_count = 0
+                if ( terminate == False ):
+                    for issue in repo_issues:
+                        if ( issue_term_input.get() != '' ):
+                            if ( int( issue_term_input.get() ) > int( issue.number ) ):
+                                break
+                        process = True
+                        if ( str( team_input.get() ) != '' ):
+                            if ( team_check( issue, team_input.get() ) ):
+                                process = True
                             else:
-                                update_status_message( "Please provide valid dates", 2 )
-            if ( processed_count > 0 ):
-                update_status_message( "Sprint report generated!", 0 )
-                bd.postprocess()
-                bd.publish_burndown_xls( wb, bd_ws )
-                push_email()
-            else:
-                update_status_message( "Nothing to process, review criteria", 2 )
+                                process = False
+                        if ( process ):
+                            msg = 'Processing #' + str( issue.number ) + ', please wait...'
+                            update_status_message( msg, 1 )
+                            parent_issue = None # to be worked on later
+                            if ( issue_retrieval_method_var.get() == 1 ):
+                                if ( issue.milestone ):
+                                    if ( sprint_info ):
+                                        if ( issue.milestone == sprint_info[ 'object' ] ):
+                                            issues_count_inc += 1
+                                            comments = issue.comments()
+                                            is_processed = process_comments_and_report( report_sheet, \
+                                                issue, comments, sprint_info, None, None, bd )
+                                            if ( is_processed ):
+                                                processed_count += 1
+                                            if ( str( isscount_override_input.get() ) != '' ):
+                                                if ( issues_count_inc == int( isscount_override_input.get() ) ):
+                                                    break
+                                            else:
+                                                if ( issues_count_inc == sprint_info[ 'issue-count' ] ):
+                                                    break
+                            elif ( issue_retrieval_method_var.get() == 2 ):
+                                if ( start_date_input.get() ) and ( end_date_input.get() ):
+                                    created_start_date = get_date_from_input( start_date_input.get() )
+                                    created_end_date = get_date_from_input( end_date_input.get() )
+                                    if ( created_start_date ) and ( created_end_date ):
+                                        comments = issue.comments()
+                                        if ( comments ):
+                                            sprint_info = get_sprint_from_issue( issue )
+                                            is_processed = process_comments_and_report( report_sheet, \
+                                                issue, comments, sprint_info, created_start_date, \
+                                                created_end_date, bd )
+                                            if ( is_processed ):
+                                                processed_count += 1
+                                    else:
+                                        update_status_message( "Please provide valid dates", 2 )
+                if ( processed_count > 0 ):
+                    bd.post_process()
+                    bd.burndown_data_to_sheet_obj( report_sheet )
+                    report_sheet.post_process()
+                    update_status_message( "Sprint report generated!", 0 )
+                    push_email()
+                else:
+                    update_status_message( "Nothing to process, review criteria", 2 )
         t = threading.Thread( target=process_thread )
         t.start()
 
-root.geometry('370x460')
+def test_func():
+    gh = None
+    gh_login_success = False
+    try:
+        gh = login( str( username_input.get() ), str( password_input.get() ) )
+        repo_check = gh.repositories()
+        for repo in repo_check:
+            name = repo.name
+        gh_login_success = True
+    except Exception as exc:
+        update_status_message( "Incorrect username / password / repo", 2 )
+        gh_login_success = False
+    if ( gh_login_success ):
+        repo = get_repo_by_name( gh, repo_input.get() )
+        if ( repo ):
+            issues = repo.issues()
+            for issue in issues:
+                creation_date = issue.created_at
+                print( creation_date )
+
+root.geometry('350x460')
 rows = 0
 while rows < 50:
     root.rowconfigure(rows, weight=1)
@@ -638,7 +736,7 @@ while rows < 50:
 style = ttk.Style()
 white = "#ffffff"
 style.theme_create( "test", parent="alt", settings = {
-        "TNotebook": { "configure": { "tabmargins": [ 2, 5, 2, 0 ], "color": white } },
+        "TNotebook": { "configure": { "tabmargins": [ 2, 5, 2, 0 ] } },
         "TNotebook.Tab": {
             "configure": { "padding": [ 5, 2 ] },
             "map":       { "expand": [ ( "selected", [ 1, 1, 1, 0 ] ) ] } } } )
@@ -651,7 +749,6 @@ main_frame = ttk.Frame(nb)
 nb.add(main_frame, text='Sprint Report')
 commits_frame = ttk.Frame(nb)
 nb.add(commits_frame, text='Commits Report')
-
 right_margin = Frame(main_frame, width = 20)
 right_margin.pack(side = RIGHT)
 left_margin = Frame(main_frame, width = 20)
@@ -660,7 +757,6 @@ bot_margin = Frame(main_frame, height = 10)
 bot_margin.pack(side = BOTTOM)
 top_margin = Frame(main_frame, height = 20)
 top_margin.pack(side = TOP)
-
 right_margin = Frame(settings_frame, width = 20)
 right_margin.pack(side = RIGHT)
 left_margin = Frame(settings_frame, width = 20)
@@ -669,7 +765,6 @@ bot_margin = Frame(settings_frame, height = 10)
 bot_margin.pack(side = BOTTOM)
 top_margin = Frame(settings_frame, height = 20)
 top_margin.pack(side = TOP)
-
 username_container = Frame( settings_frame, width = 30 )
 username_container.pack()
 password_container = Frame( settings_frame, width = 30 )
@@ -677,7 +772,7 @@ password_container.pack()
 repo_container = Frame( settings_frame, width = 30 )
 repo_container.pack()
 username_label = Label(username_container, width=15, height=1, \
-    text="Github username")
+    text="Github username", anchor='w')
 username_label.pack(side = LEFT)
 username_input = Entry(username_container, width = 25, borderwidth = 1, \
     font = 'Calibri, 12')
@@ -686,18 +781,17 @@ username_input.focus()
 sep2 = Frame(main_frame, height = 10)
 sep2.pack(side = BOTTOM)
 password_label = Label(password_container, width=15, height=1, \
-    text="Github password")
+    text="Github password", anchor='w')
 password_label.pack(side = LEFT)
 password_input = Entry(password_container, show='*',width = 25, \
     borderwidth = 1, font = 'Calibri, 12')
 password_input.pack(side = RIGHT)
 repo_label = Label(repo_container, width=15, height=1, \
-    text="Repository name")
+    text="Repository name", anchor='w')
 repo_label.pack(side = LEFT)
 repo_input = Entry(repo_container, width = 25, \
     borderwidth = 1, font = 'Calibri, 12')
 repo_input.pack(side = RIGHT)
-
 email_container = Frame( main_frame, width = 30 )
 email_container.pack()
 email_pwd_container = Frame( main_frame, width = 30 )
@@ -708,98 +802,117 @@ sep1 = Frame(main_frame, height = 10)
 sep1.pack()
 radio_butt_frame = Frame(main_frame, width = 30)
 radio_butt_frame.pack()
-rad1 = Radiobutton(radio_butt_frame, text="Report by curr. sprint", \
-    variable=issue_retrieval_method_var, value=1, padx = 5)
+
+start_date_container = Frame( main_frame, width = 30 )
+end_date_container = Frame( main_frame, width = 30 )
+sprint_weeks_container = Frame( main_frame, width = 35 )
+sprint_override_container = Frame( main_frame, width = 35 )
+start_date_input = Entry(start_date_container, width = 15, borderwidth = 1, \
+    font = 'Calibri, 12' )
+end_date_input = Entry(end_date_container, width = 15, borderwidth = 1, \
+    font = 'Calibri, 12')
+sprint_weeks_input = Entry(sprint_weeks_container, width = 20, \
+    borderwidth = 1, font = 'Calibri, 12')
+sprint_override_input = Entry(sprint_override_container, width = 20, \
+    borderwidth = 1, font = 'Calibri, 12')
+
+def sprint_toggle_callback( ):
+    start_date_input.config( state='disabled' )
+    end_date_input.config( state='disabled' )
+    sprint_weeks_input.config( state = 'normal' )
+    sprint_override_input.config( state = 'normal' )
+def date_toggle_callback( ):
+    start_date_input.config( state='normal' )
+    end_date_input.config( state='normal' )
+    sprint_weeks_input.config( state = 'disabled' )
+    sprint_override_input.config( state = 'disabled' )
+
+rad1 = Radiobutton(radio_butt_frame, text="Report by sprint", \
+    variable=issue_retrieval_method_var, value=1, padx = 5, command = sprint_toggle_callback )
 rad1.pack(side = LEFT)
 rad1.select()
 rad2 = Radiobutton(radio_butt_frame, text="Report by dates", \
-    variable=issue_retrieval_method_var, value=2, padx = 5)
+    variable=issue_retrieval_method_var, value=2, padx = 5, command = date_toggle_callback )
 rad2.pack(side = LEFT)
 sep1 = Frame(main_frame, height = 10)
 sep1.pack()
-
-team_container = Frame( main_frame, width = 30 )
+sprint_override_container.pack()
+sprint_override_label = Label(sprint_override_container, width = 20, \
+    height = 1, text="Sprint title", anchor='w')
+sprint_override_label.pack(side = LEFT)
+sprint_weeks_container.pack()
+sprint_weeks_label = Label(sprint_weeks_container, width = 20, \
+    height = 1, text="Sprint weeks", anchor='w')
+sprint_weeks_label.pack(side = LEFT)
+start_date_container.pack()
+start_date_label = Label(start_date_container, width = 25, height = 1, \
+    text="Start date [ YYYY-MM-DD ]", anchor='w')
+start_date_label.pack(side = LEFT)
+start_date_input.pack(side = RIGHT)
+end_date_container.pack()
+end_date_label = Label(end_date_container, width = 25, height = 1, \
+    text="End date [ YYYY-MM-DD ]", anchor='w')
+end_date_label.pack(side = LEFT)
+sprint_override_input.pack(side = RIGHT)
+isscount_override_container = Frame( main_frame, width = 35 )
+isscount_override_container.pack()
+isscount_override_label = Label(isscount_override_container, width = 20, \
+    height = 1, text="Issue count override", anchor='w')
+isscount_override_label.pack(side = LEFT)
+isscount_override_input = Entry(isscount_override_container, width = 20, \
+    borderwidth = 1, font = 'Calibri, 12')
+isscount_override_input.pack(side = RIGHT)
+sprint_weeks_input.insert( 0, '2' )
+sprint_weeks_input.pack(side = RIGHT)
+end_date_input.pack(side = RIGHT)
+team_container = Frame( main_frame, width = 35 )
 team_container.pack()
-team_label = Label(team_container, width = 15, \
-    height = 1, text="Team name")
+team_label = Label(team_container, width = 20, \
+    height = 1, text="Filter by team label", anchor='w')
 team_label.pack(side = LEFT)
-team_input = Entry(team_container, width = 25, \
+team_input = Entry(team_container, width = 20, \
     borderwidth = 1, font = 'Calibri, 12')
 team_input.pack(side = RIGHT)
 
-sprint_override_container = Frame( main_frame, width = 30 )
-sprint_override_container.pack()
-sprint_override_label = Label(sprint_override_container, width = 15, \
-    height = 1, text="Sprint override")
-sprint_override_label.pack(side = LEFT)
-sprint_override_input = Entry(sprint_override_container, width = 25, \
+issue_term_container = Frame( main_frame, width = 35 )
+issue_term_container.pack()
+issue_term_label = Label(issue_term_container, width = 20, \
+    height = 1, text="Terminate at issue #", anchor='w')
+issue_term_label.pack(side = LEFT)
+issue_term_input = Entry(issue_term_container, width = 20, \
     borderwidth = 1, font = 'Calibri, 12')
-sprint_override_input.pack(side = RIGHT)
+issue_term_input.pack(side = RIGHT)
 
-isscount_override_container = Frame( main_frame, width = 30 )
-isscount_override_container.pack()
-isscount_override_label = Label(isscount_override_container, width = 15, \
-    height = 1, text="issue count override")
-isscount_override_label.pack(side = LEFT)
-isscount_override_input = Entry(isscount_override_container, width = 25, \
-    borderwidth = 1, font = 'Calibri, 12')
-isscount_override_input.pack(side = RIGHT)
-
-sprint_weeks_container = Frame( main_frame, width = 30 )
-sprint_weeks_container.pack()
-sprint_weeks_label = Label(sprint_weeks_container, width = 15, \
-    height = 1, text="Sprint weeks")
-sprint_weeks_label.pack(side = LEFT)
-sprint_weeks_input = Entry(sprint_weeks_container, width = 25, \
-    borderwidth = 1, font = 'Calibri, 12')
-sprint_weeks_input.insert( 0, '2' )
-sprint_weeks_input.pack(side = RIGHT)
-start_date_container = Frame( main_frame, width = 30 )
-start_date_container.pack()
-start_date_label = Label(start_date_container, width = 25, height = 1, \
-    text="Start date [ YYYY-MM-DD ]")
-start_date_label.pack(side = LEFT)
-start_date_input = Entry(start_date_container, width = 15, borderwidth = 1, \
-    font = 'Calibri, 12')
-start_date_input.pack(side = RIGHT)
-sep1 = Frame(main_frame, height = 5)
-sep1.pack()
-end_date_container = Frame( main_frame, width = 30 )
-end_date_container.pack()
-end_date_label = Label(end_date_container, width = 25, height = 1, \
-    text="End date [ YYYY-MM-DD ]")
-end_date_label.pack(side = LEFT)
-end_date_input = Entry(end_date_container, width = 15, borderwidth = 1, \
-    font = 'Calibri, 12')
-end_date_input.pack(side = RIGHT)
-status_label = Label(main_frame, width=35, height=1, text="")
+status_label = Label(main_frame, width=35, height=1, text="" )
 status_label.pack(side = BOTTOM)
 email_label = Label(email_container, width=15, height=1, \
-    text="Sender Email")
+    text="Sender Email", anchor='w')
 email_label.pack(side = LEFT)
 email_input = Entry(email_container, width = 25, borderwidth = 1, \
     font = 'Calibri, 12')
 email_input.pack(side = RIGHT)
 email_pwd_label = Label(email_pwd_container, width=15, height=1, \
-    text="Sender Password")
+    text="Sender Password", anchor='w')
 email_pwd_label.pack(side = LEFT)
 email_pwd_input = Entry(email_pwd_container, width = 25, \
     borderwidth = 1, font = 'Calibri, 12')
 email_pwd_input.pack(side = RIGHT)
 recipent_label = Label(recipent_container, width=15, height=1, \
-    text="Recipent Email")
+    text="Recipent Email", anchor='w')
 recipent_label.pack(side = LEFT)
 recipent_input = Entry(recipent_container, width = 25, \
     borderwidth = 1, font = 'Calibri, 12')
 recipent_input.pack(side = RIGHT)
 sep2 = Frame(main_frame, height = 10)
 sep2.pack(side = BOTTOM)
-exit_button = Button(main_frame, width = 35, bd = 2, text="Quit", command = quit)
-exit_button.pack(side = BOTTOM)
+# exit_button = Button(main_frame, width = 35, bd = 2, text="Quit", command = quit)
+# exit_button.pack(side = BOTTOM)
 sprint_report_button = Button(main_frame, width = 35, bd = 2, \
-    text="Generate Report", command = sprint_report)
+    text="Generate Report", command = sprint_report_main)
 sprint_report_button.pack(side = BOTTOM)
-
+test_button = Button(main_frame, width = 35, bd = 2, \
+    text="[ test button ]", command = test_func)
+test_button.pack(side = BOTTOM)
 right_margin = Frame(commits_frame, width = 20)
 right_margin.pack(side = RIGHT)
 left_margin = Frame(commits_frame, width = 20)
@@ -813,7 +926,7 @@ sep2.pack(side = BOTTOM)
 issue_criteria_container = Frame( commits_frame, width = 30 )
 issue_criteria_container.pack()
 issue_criteria_label = Label(issue_criteria_container, width=15, height=1, \
-    text="Issue ref. criteria")
+    text="Issue ref. criteria", anchor='w')
 issue_criteria_label.pack(side = LEFT)
 issue_criteria_input = Entry(issue_criteria_container, width = 25, borderwidth = 1, \
     font = 'Calibri, 12')
@@ -821,19 +934,19 @@ issue_criteria_input.pack(side = RIGHT)
 commits_date_container = Frame( commits_frame, width = 30 )
 commits_date_container.pack()
 commits_date_label = Label(commits_date_container, width = 25, height = 1, \
-    text="Start date [ YYYY-MM-DD ]")
+    text="Start date [ YYYY-MM-DD ]", anchor='w')
 commits_date_label.pack(side = LEFT)
 commits_date_input = Entry(commits_date_container, width = 15, borderwidth = 1, \
     font = 'Calibri, 12')
 commits_date_input.pack(side = RIGHT)
-commits_status_label = Label(commits_frame, width=35, height=1, text="")
+commits_status_label = Label(commits_frame, width=35, height=1, text="", anchor='w')
 commits_status_label.pack(side = BOTTOM)
 sep2 = Frame(commits_frame, height = 20)
 sep2.pack(side = BOTTOM)
 commits_sender_email_container = Frame( commits_frame, width = 30 )
 commits_sender_email_container.pack()
 commits_sender_email_label = Label(commits_sender_email_container, width = 15, height = 1, \
-    text="Sender Email")
+    text="Sender Email", anchor='w')
 commits_sender_email_label.pack(side = LEFT)
 commits_sender_email_input = Entry(commits_sender_email_container, width = 25, borderwidth = 1, \
     font = 'Calibri, 12')
@@ -841,7 +954,7 @@ commits_sender_email_input.pack(side = RIGHT)
 commits_sender_pwd_container = Frame( commits_frame, width = 30 )
 commits_sender_pwd_container.pack()
 commits_sender_pwd_label = Label(commits_sender_pwd_container, width = 15, height = 1, \
-    text="Sender Password")
+    text="Sender Password", anchor='w')
 commits_sender_pwd_label.pack(side = LEFT)
 commits_sender_pwd_input = Entry(commits_sender_pwd_container, width = 25, borderwidth = 1, \
     font = 'Calibri, 12')
@@ -849,7 +962,7 @@ commits_sender_pwd_input.pack(side = RIGHT)
 commits_admin_email_container = Frame( commits_frame, width = 30 )
 commits_admin_email_container.pack()
 commits_admin_email_label = Label(commits_admin_email_container, width = 15, height = 1, \
-    text="BCC Admin Email")
+    text="BCC Admin Email", anchor='w')
 commits_admin_email_label.pack(side = LEFT)
 commits_admin_email_input = Entry(commits_admin_email_container, width = 25, borderwidth = 1, \
     font = 'Calibri, 12')
@@ -857,6 +970,9 @@ commits_admin_email_input.pack(side = RIGHT)
 commits_button = Button(commits_frame, width = 35, bd = 2, \
     text="Commit Messages Report", command = commits_report)
 commits_button.pack(side = BOTTOM)
+
+start_date_input.config( state='disabled' )
+end_date_input.config( state='disabled' )
 
 root.title("Github Project Reporting")
 root.resizable(width = FALSE, height = FALSE)
