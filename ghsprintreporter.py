@@ -501,20 +501,22 @@ def get_sp( issue ):
     labels = issue.labels()
     sp_num = 0
     for label in labels:
-        if ( 'sp' in label.name ):
+        if 'sp' in label.name:
             sp_num = int( label.name[ :-2 ] )
     return sp_num
+
 
 def get_assignee_str( issue ):
     assignees = issue.assignees
     asg_arr = ''
     count = 0
     for assignee in assignees:
-        if ( count > 0 ):
+        if count > 0:
             asg_arr += ", "
         asg_arr += str( assignee )
         count += 1
     return str( asg_arr )
+
 
 # this method assumes that the estimate is provided in the main description
 # in the format '4hrs', and that only one estimate is available. If multiple
@@ -524,9 +526,9 @@ def get_issue_estimate( issue ):
     hours, notes = parse_comment( issue.body )
     return hours
 
+
 def commits_report():
     gh = None
-    gh_login_success = False
     try:
         gh = login( str( username_input.get() ), str( password_input.get() ) )
         repo_check = gh.repositories()
@@ -536,30 +538,28 @@ def commits_report():
     except Exception as exc:
         update_status_message( "Incorrect username / password / repo", 2 )
         gh_login_success = False
-    if ( gh_login_success ):
+    if gh_login_success:
         def process_commmit_thrd():
-            operation_complete = False
             repo = get_repo_by_name( gh, repo_input.get() )
             cmt_date = "2018-01-01"
-            if ( commits_date_input.get() ):
+            if commits_date_input.get():
                 cmt_date = commits_date_input.get()
             cmts = repo.commits( None, None, None, -1, None, cmt_date, None, None )
             team_dict = get_team_dict_from_csv()
-            if ( team_dict ):
+            if team_dict:
                 for cmt in cmts:
                     msg = 'Processing, please wait...'
                     update_status_message( msg, 4 )
                     violation_code = is_commit_format( cmt.commit.message )
-                    if ( violation_code == 1 ):
-                        if ( str( cmt.author ) in team_dict ):
+                    if violation_code == 1:
+                        if str( cmt.author ) in team_dict:
                             author_email = team_dict[ str( cmt.author ) ][ 0 ]
                             author_manager = team_dict[ str( cmt.author ) ][ 1 ]
                             manager_email = team_dict[ author_manager ][ 0 ]
                             emails_list = []
                             emails_list.append( author_email )
-                            if ( manager_email ):
+                            if manager_email:
                                 emails_list.append( manager_email )
-                            commit_url = cmt.url
                             comments = cmt.comments()
                             comment_adjustment_found = False
                             email_sub = "[ commit message violation ] " + \
@@ -571,20 +571,20 @@ def commits_report():
                                 " issue reference in the comment box."
                             email_msg += "\n\nCommit URL: " + str( cmt.html_url )
                             for cmnt in comments:
-                                if ( str( issue_criteria_input.get() ).lower() \
-                                    in str( cmnt.body ).lower() ):
+                                if ( str( issue_criteria_input.get() ).lower()
+                                        in str( cmnt.body ).lower() ):
                                     comment_adjustment_found = True
-                            if ( comment_adjustment_found == False ):
-                                push_email_to_user( commits_sender_email_input.get(), \
-                                    commits_sender_pwd_input.get(), emails_list, \
-                                    email_sub, email_msg, \
+                            if comment_adjustment_found == False:
+                                push_email_to_user( commits_sender_email_input.get(),
+                                    commits_sender_pwd_input.get(), emails_list,
+                                    email_sub, email_msg,
                                     commits_admin_email_input.get(), 6 )
                                 time.sleep( 5.0 )
-                    elif ( violation_code == 2 ):   # something for later
+                    elif violation_code == 2:   # something for later
                         pass
-                    elif ( violation_code == 3 ):   # something for later
+                    elif violation_code == 3:   # something for later
                         pass
-                    elif ( violation_code == 4 ):   # something for later
+                    elif violation_code == 4:   # something for later
                         pass
                 update_status_message( "Commit messages processed!", 5 )
             else:
@@ -592,34 +592,36 @@ def commits_report():
         t = threading.Thread( target = process_commmit_thrd )
         t.start()
 
+
 def team_check( issue, team_name ):
     team_name = str( team_name ).lower()
     labels = issue.labels()
     is_team_issue = False
     for lbl in labels:
-        if ( team_name == str( lbl.name ).lower() ):
+        if team_name == str( lbl.name ).lower():
             is_team_issue = True
     return is_team_issue
 
+
 def sprint_report_main():
-    if ( issue_retrieval_method_var.get() == 1 ):
+    if issue_retrieval_method_var.get() == 1:
         if ( sprint_override_input.get() != '' ) and \
-            ( sprint_weeks_input.get() != '' ) and \
-            ( int( sprint_weeks_input.get() ) > 0 ):
+                ( sprint_weeks_input.get() != '' ) and \
+                ( int( sprint_weeks_input.get() ) > 0 ):
             sprint_report()
         else:
             update_status_message( "Enter sprint name and weeks count", 2 )
-    elif ( issue_retrieval_method_var.get() == 2 ):
+    elif issue_retrieval_method_var.get() == 2:
         if ( start_date_input.get() != '' ) and ( end_date_input.get() != '' ):
             sprint_report()
         else:
             update_status_message( "Enter start and end dates", 2 )
 
+
 def sprint_report():
     status_label[ 'text' ] = ''
     status_label.configure( foreground = "red" )
     gh = None
-    gh_login_success = False
     try:
         gh = login( str( username_input.get() ), str( password_input.get() ) )
         repo_check = gh.repositories()
@@ -629,86 +631,85 @@ def sprint_report():
     except Exception as exc:
         update_status_message( "Incorrect username / password / repo", 2 )
         gh_login_success = False
-    if ( gh_login_success ):
+    if gh_login_success:
         report_sheet = ReportSheet( 'report' )
-        sheet_data_arr = [] # spreadsheet data internal container for checking duplicates
         arr = [ "Issue", "Assignees", "Status", "St. Pts", "Comment ID", "Author", \
             "Sprint", "Estimate", "Actual Hours", "Date", "Comments" ]
         report_sheet.add_data_row( arr )
+
         def process_thread():
             terminate = False
             update_status_message( "Processing, please wait...", 1 )
             status_label.configure( foreground = "orange" )
             repo = get_repo_by_name( gh, repo_input.get() )
-            if ( repo ):
+            if repo:
                 repo_issues = repo.issues( None, 'all' )
                 sprint_info = None
                 bd = None
-                if ( issue_retrieval_method_var.get() == 1 ):
+                if issue_retrieval_method_var.get() == 1:
                     sprint_info = get_curr_sprint_info( repo )
-                    if ( sprint_info == None ):
+                    if sprint_info == None:
                         update_status_message( "Invalid sprint name!", 2 )
                         terminate = True
                     else:
                         bd = Burndown( sprint_info[ 'start-date' ], sprint_info[ 'end-date' ] )
                 else:
                     if ( get_date_from_input( start_date_input.get() ) ) and \
-                        get_date_from_input( end_date_input.get() ):
-                        bd = Burndown( get_date_from_input( start_date_input.get() ), \
-                            get_date_from_input( end_date_input.get() ) )
+                            get_date_from_input( end_date_input.get() ):
+                        bd = Burndown( get_date_from_input( start_date_input.get() ),
+                                       get_date_from_input( end_date_input.get() ) )
                     else:
                         update_status_message( "Invalid start or end dates!", 2 )
                         terminate = True
                 issues_count_inc = 0
-                is_processed = False
                 processed_count = 0
-                if ( terminate == False ):
+                if terminate == False:
                     for issue in repo_issues:
-                        if ( issue_term_input.get() != '' ):
-                            if ( int( issue_term_input.get() ) > int( issue.number ) ):
+                        if issue_term_input.get() != '':
+                            if int( issue_term_input.get() ) > int( issue.number ):
                                 break
                         process = True
-                        if ( str( team_input.get() ) != '' ):
-                            if ( team_check( issue, team_input.get() ) ):
+                        if str( team_input.get() ) != '':
+                            if team_check( issue, team_input.get() ):
                                 process = True
                             else:
                                 process = False
-                        if ( process ):
+                        if process:
                             msg = 'Processing #' + str( issue.number ) + ', please wait...'
                             update_status_message( msg, 1 )
-                            parent_issue = None # to be worked on later
-                            if ( issue_retrieval_method_var.get() == 1 ):
-                                if ( issue.milestone ):
-                                    if ( sprint_info ):
-                                        if ( issue.milestone == sprint_info[ 'object' ] ):
+                            if issue_retrieval_method_var.get() == 1:
+                                if issue.milestone:
+                                    if sprint_info:
+                                        if issue.milestone == sprint_info[ 'object' ]:
                                             issues_count_inc += 1
                                             comments = issue.comments()
                                             is_processed = process_comments_and_report( report_sheet, \
                                                 issue, comments, sprint_info, None, None, bd )
-                                            if ( is_processed ):
+                                            if is_processed:
                                                 processed_count += 1
-                                            if ( str( isscount_override_input.get() ) != '' ):
-                                                if ( issues_count_inc == int( isscount_override_input.get() ) ):
+                                            if str( isscount_override_input.get() ) != '':
+                                                if issues_count_inc == int( isscount_override_input.get() ):
                                                     break
                                             else:
-                                                if ( issues_count_inc == sprint_info[ 'issue-count' ] ):
+                                                if issues_count_inc == sprint_info[ 'issue-count' ]:
                                                     break
-                            elif ( issue_retrieval_method_var.get() == 2 ):
+                            elif issue_retrieval_method_var.get() == 2:
                                 if ( start_date_input.get() ) and ( end_date_input.get() ):
                                     created_start_date = get_date_from_input( start_date_input.get() )
                                     created_end_date = get_date_from_input( end_date_input.get() )
-                                    if ( created_start_date ) and ( created_end_date ):
+                                    if created_start_date and created_end_date:
                                         comments = issue.comments()
-                                        if ( comments ):
+                                        if comments:
                                             sprint_info = get_sprint_from_issue( issue )
-                                            is_processed = process_comments_and_report( report_sheet, \
-                                                issue, comments, sprint_info, created_start_date, \
-                                                created_end_date, bd )
-                                            if ( is_processed ):
+                                            is_processed = process_comments_and_report( report_sheet, issue,
+                                                                                        comments, sprint_info,
+                                                                                        created_start_date,
+                                                                                        created_end_date, bd )
+                                            if is_processed:
                                                 processed_count += 1
                                     else:
                                         update_status_message( "Please provide valid dates", 2 )
-                if ( processed_count > 0 ):
+                if processed_count > 0:
                     bd.post_process()
                     bd.burndown_data_to_sheet_obj( report_sheet )
                     report_sheet.post_process()
@@ -719,25 +720,6 @@ def sprint_report():
         t = threading.Thread( target=process_thread )
         t.start()
 
-def test_func():
-    gh = None
-    gh_login_success = False
-    try:
-        gh = login( str( username_input.get() ), str( password_input.get() ) )
-        repo_check = gh.repositories()
-        for repo in repo_check:
-            name = repo.name
-        gh_login_success = True
-    except Exception as exc:
-        update_status_message( "Incorrect username / password / repo", 2 )
-        gh_login_success = False
-    if ( gh_login_success ):
-        repo = get_repo_by_name( gh, repo_input.get() )
-        if ( repo ):
-            issues = repo.issues()
-            for issue in issues:
-                creation_date = issue.created_at
-                print( creation_date )
 
 root.geometry('350x460')
 rows = 0
@@ -783,25 +765,25 @@ password_container = Frame( settings_frame, width = 30 )
 password_container.pack()
 repo_container = Frame( settings_frame, width = 30 )
 repo_container.pack()
-username_label = Label(username_container, width=15, height=1, \
+username_label = Label(username_container, width=15, height=1,
     text="Github username", anchor='w')
 username_label.pack(side = LEFT)
-username_input = Entry(username_container, width = 25, borderwidth = 1, \
+username_input = Entry(username_container, width = 25, borderwidth = 1,
     font = 'Calibri, 12')
 username_input.pack(side = RIGHT)
 username_input.focus()
 sep2 = Frame(main_frame, height = 10)
 sep2.pack(side = BOTTOM)
-password_label = Label(password_container, width=15, height=1, \
+password_label = Label(password_container, width=15, height=1,
     text="Github password", anchor='w')
 password_label.pack(side = LEFT)
-password_input = Entry(password_container, show='*',width = 25, \
+password_input = Entry(password_container, show='*',width = 25,
     borderwidth = 1, font = 'Calibri, 12')
 password_input.pack(side = RIGHT)
-repo_label = Label(repo_container, width=15, height=1, \
+repo_label = Label(repo_container, width=15, height=1,
     text="Repository name", anchor='w')
 repo_label.pack(side = LEFT)
-repo_input = Entry(repo_container, width = 25, \
+repo_input = Entry(repo_container, width = 25,
     borderwidth = 1, font = 'Calibri, 12')
 repo_input.pack(side = RIGHT)
 email_container = Frame( main_frame, width = 30 )
@@ -819,13 +801,13 @@ start_date_container = Frame( main_frame, width = 30 )
 end_date_container = Frame( main_frame, width = 30 )
 sprint_weeks_container = Frame( main_frame, width = 35 )
 sprint_override_container = Frame( main_frame, width = 35 )
-start_date_input = Entry(start_date_container, width = 15, borderwidth = 1, \
+start_date_input = Entry(start_date_container, width = 15, borderwidth = 1,
     font = 'Calibri, 12' )
-end_date_input = Entry(end_date_container, width = 15, borderwidth = 1, \
+end_date_input = Entry(end_date_container, width = 15, borderwidth = 1,
     font = 'Calibri, 12')
-sprint_weeks_input = Entry(sprint_weeks_container, width = 20, \
+sprint_weeks_input = Entry(sprint_weeks_container, width = 20,
     borderwidth = 1, font = 'Calibri, 12')
-sprint_override_input = Entry(sprint_override_container, width = 20, \
+sprint_override_input = Entry(sprint_override_container, width = 20,
     borderwidth = 1, font = 'Calibri, 12')
 
 def sprint_toggle_callback( ):
@@ -839,39 +821,39 @@ def date_toggle_callback( ):
     sprint_weeks_input.config( state = 'disabled' )
     sprint_override_input.config( state = 'disabled' )
 
-rad1 = Radiobutton(radio_butt_frame, text="Report by sprint", \
+rad1 = Radiobutton(radio_butt_frame, text="Report by sprint",
     variable=issue_retrieval_method_var, value=1, padx = 5, command = sprint_toggle_callback )
 rad1.pack(side = LEFT)
 rad1.select()
-rad2 = Radiobutton(radio_butt_frame, text="Report by dates", \
+rad2 = Radiobutton(radio_butt_frame, text="Report by dates",
     variable=issue_retrieval_method_var, value=2, padx = 5, command = date_toggle_callback )
 rad2.pack(side = LEFT)
 sep1 = Frame(main_frame, height = 10)
 sep1.pack()
 sprint_override_container.pack()
-sprint_override_label = Label(sprint_override_container, width = 20, \
+sprint_override_label = Label(sprint_override_container, width = 20,
     height = 1, text="Sprint title", anchor='w')
 sprint_override_label.pack(side = LEFT)
 sprint_weeks_container.pack()
-sprint_weeks_label = Label(sprint_weeks_container, width = 20, \
+sprint_weeks_label = Label(sprint_weeks_container, width = 20,
     height = 1, text="Sprint weeks", anchor='w')
 sprint_weeks_label.pack(side = LEFT)
 start_date_container.pack()
-start_date_label = Label(start_date_container, width = 25, height = 1, \
+start_date_label = Label(start_date_container, width = 25, height = 1,
     text="Start date [ YYYY-MM-DD ]", anchor='w')
 start_date_label.pack(side = LEFT)
 start_date_input.pack(side = RIGHT)
 end_date_container.pack()
-end_date_label = Label(end_date_container, width = 25, height = 1, \
+end_date_label = Label(end_date_container, width = 25, height = 1,
     text="End date [ YYYY-MM-DD ]", anchor='w')
 end_date_label.pack(side = LEFT)
 sprint_override_input.pack(side = RIGHT)
 isscount_override_container = Frame( main_frame, width = 35 )
 isscount_override_container.pack()
-isscount_override_label = Label(isscount_override_container, width = 20, \
+isscount_override_label = Label(isscount_override_container, width = 20,
     height = 1, text="Issue count override", anchor='w')
 isscount_override_label.pack(side = LEFT)
-isscount_override_input = Entry(isscount_override_container, width = 20, \
+isscount_override_input = Entry(isscount_override_container, width = 20,
     borderwidth = 1, font = 'Calibri, 12')
 isscount_override_input.pack(side = RIGHT)
 sprint_weeks_input.insert( 0, '2' )
@@ -879,52 +861,52 @@ sprint_weeks_input.pack(side = RIGHT)
 end_date_input.pack(side = RIGHT)
 team_container = Frame( main_frame, width = 35 )
 team_container.pack()
-team_label = Label(team_container, width = 20, \
+team_label = Label(team_container, width = 20,
     height = 1, text="Filter by team label", anchor='w')
 team_label.pack(side = LEFT)
-team_input = Entry(team_container, width = 20, \
+team_input = Entry(team_container, width = 20,
     borderwidth = 1, font = 'Calibri, 12')
 team_input.pack(side = RIGHT)
 
 issue_term_container = Frame( main_frame, width = 35 )
 issue_term_container.pack()
-issue_term_label = Label(issue_term_container, width = 20, \
+issue_term_label = Label(issue_term_container, width = 20,
     height = 1, text="Terminate at issue #", anchor='w')
 issue_term_label.pack(side = LEFT)
-issue_term_input = Entry(issue_term_container, width = 20, \
+issue_term_input = Entry(issue_term_container, width = 20,
     borderwidth = 1, font = 'Calibri, 12')
 issue_term_input.pack(side = RIGHT)
 
 status_label = Label(main_frame, width=35, height=1, text="" )
 status_label.pack(side = BOTTOM)
-email_label = Label(email_container, width=15, height=1, \
+email_label = Label(email_container, width=15, height=1,
     text="Sender Email", anchor='w')
 email_label.pack(side = LEFT)
-email_input = Entry(email_container, width = 25, borderwidth = 1, \
+email_input = Entry(email_container, width = 25, borderwidth = 1,
     font = 'Calibri, 12')
 email_input.pack(side = RIGHT)
-email_pwd_label = Label(email_pwd_container, width=15, height=1, \
+email_pwd_label = Label(email_pwd_container, width=15, height=1,
     text="Sender Password", anchor='w')
 email_pwd_label.pack(side = LEFT)
-email_pwd_input = Entry(email_pwd_container, width = 25, \
+email_pwd_input = Entry(email_pwd_container, width = 25,
     borderwidth = 1, font = 'Calibri, 12')
 email_pwd_input.pack(side = RIGHT)
-recipent_label = Label(recipent_container, width=15, height=1, \
+recipent_label = Label(recipent_container, width=15, height=1,
     text="Recipent Email", anchor='w')
 recipent_label.pack(side = LEFT)
-recipent_input = Entry(recipent_container, width = 25, \
+recipent_input = Entry(recipent_container, width = 25,
     borderwidth = 1, font = 'Calibri, 12')
 recipent_input.pack(side = RIGHT)
 sep2 = Frame(main_frame, height = 10)
 sep2.pack(side = BOTTOM)
 # exit_button = Button(main_frame, width = 35, bd = 2, text="Quit", command = quit)
 # exit_button.pack(side = BOTTOM)
-sprint_report_button = Button(main_frame, width = 35, bd = 2, \
+sprint_report_button = Button(main_frame, width = 35, bd = 2,
     text="Generate Report", command = sprint_report_main)
 sprint_report_button.pack(side = BOTTOM)
-test_button = Button(main_frame, width = 35, bd = 2, \
-    text="[ test button ]", command = test_func)
-test_button.pack(side = BOTTOM)
+# test_button = Button(main_frame, width = 35, bd = 2,
+#     text="[ test button ]", command = test_func)
+# test_button.pack(side = BOTTOM)
 right_margin = Frame(commits_frame, width = 20)
 right_margin.pack(side = RIGHT)
 left_margin = Frame(commits_frame, width = 20)
@@ -937,18 +919,18 @@ sep2 = Frame(commits_frame, height = 10)
 sep2.pack(side = BOTTOM)
 issue_criteria_container = Frame( commits_frame, width = 30 )
 issue_criteria_container.pack()
-issue_criteria_label = Label(issue_criteria_container, width=15, height=1, \
+issue_criteria_label = Label(issue_criteria_container, width=15, height=1,
     text="Issue ref. criteria", anchor='w')
 issue_criteria_label.pack(side = LEFT)
-issue_criteria_input = Entry(issue_criteria_container, width = 25, borderwidth = 1, \
+issue_criteria_input = Entry(issue_criteria_container, width = 25, borderwidth = 1,
     font = 'Calibri, 12')
 issue_criteria_input.pack(side = RIGHT)
 commits_date_container = Frame( commits_frame, width = 30 )
 commits_date_container.pack()
-commits_date_label = Label(commits_date_container, width = 25, height = 1, \
+commits_date_label = Label(commits_date_container, width = 25, height = 1,
     text="Start date [ YYYY-MM-DD ]", anchor='w')
 commits_date_label.pack(side = LEFT)
-commits_date_input = Entry(commits_date_container, width = 15, borderwidth = 1, \
+commits_date_input = Entry(commits_date_container, width = 15, borderwidth = 1,
     font = 'Calibri, 12')
 commits_date_input.pack(side = RIGHT)
 commits_status_label = Label(commits_frame, width=35, height=1, text="", anchor='w')
@@ -957,29 +939,29 @@ sep2 = Frame(commits_frame, height = 20)
 sep2.pack(side = BOTTOM)
 commits_sender_email_container = Frame( commits_frame, width = 30 )
 commits_sender_email_container.pack()
-commits_sender_email_label = Label(commits_sender_email_container, width = 15, height = 1, \
+commits_sender_email_label = Label(commits_sender_email_container, width = 15, height = 1,
     text="Sender Email", anchor='w')
 commits_sender_email_label.pack(side = LEFT)
-commits_sender_email_input = Entry(commits_sender_email_container, width = 25, borderwidth = 1, \
+commits_sender_email_input = Entry(commits_sender_email_container, width = 25, borderwidth = 1,
     font = 'Calibri, 12')
 commits_sender_email_input.pack(side = RIGHT)
 commits_sender_pwd_container = Frame( commits_frame, width = 30 )
 commits_sender_pwd_container.pack()
-commits_sender_pwd_label = Label(commits_sender_pwd_container, width = 15, height = 1, \
+commits_sender_pwd_label = Label(commits_sender_pwd_container, width = 15, height = 1,
     text="Sender Password", anchor='w')
 commits_sender_pwd_label.pack(side = LEFT)
-commits_sender_pwd_input = Entry(commits_sender_pwd_container, width = 25, borderwidth = 1, \
+commits_sender_pwd_input = Entry(commits_sender_pwd_container, width = 25, borderwidth = 1,
     font = 'Calibri, 12')
 commits_sender_pwd_input.pack(side = RIGHT)
 commits_admin_email_container = Frame( commits_frame, width = 30 )
 commits_admin_email_container.pack()
-commits_admin_email_label = Label(commits_admin_email_container, width = 15, height = 1, \
+commits_admin_email_label = Label(commits_admin_email_container, width = 15, height = 1,
     text="BCC Admin Email", anchor='w')
 commits_admin_email_label.pack(side = LEFT)
-commits_admin_email_input = Entry(commits_admin_email_container, width = 25, borderwidth = 1, \
+commits_admin_email_input = Entry(commits_admin_email_container, width = 25, borderwidth = 1,
     font = 'Calibri, 12')
 commits_admin_email_input.pack(side = RIGHT)
-commits_button = Button(commits_frame, width = 35, bd = 2, \
+commits_button = Button(commits_frame, width = 35, bd = 2,
     text="Commit Messages Report", command = commits_report)
 commits_button.pack(side = BOTTOM)
 
