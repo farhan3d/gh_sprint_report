@@ -1,12 +1,8 @@
 from __future__ import division
 from github3 import login
 import datetime
-import calendar
-import re
-from string import digits
 from string import letters
 from openpyxl import Workbook
-from openpyxl import load_workbook
 from Tkinter import *
 import ttk
 import time
@@ -14,7 +10,6 @@ import threading
 import smtplib
 import csv
 from email.mime.text import MIMEText
-import math
 
 root = Tk()
 
@@ -28,8 +23,10 @@ root = Tk()
 CSV_FILE_NAME = 'team'
 NUM_BUSINESS_DAYS_PER_WEEK = 5
 
+
 # a class for hourly burndown data structure and xls publishing
 class Burndown:
+
     # process the ideal hours array incrementally and push it to a date-hours dict
     def process_ideal_by_inc( self, estimate_inc ):
         self.estimate += estimate_inc
@@ -40,15 +37,16 @@ class Burndown:
             self.date_hours_ideal_map[ inc_date ] += estimate_inc
             self.date_hours_ideal_map[ inc_date ] = self.estimate - temp
             temp += self.interval
-            if ( inc_date.weekday() == 4 ):
+            if inc_date.weekday() == 4:
                 inc_date += datetime.timedelta( days = 3 )
             else:
                 inc_date += datetime.timedelta( days = 1 )
+
     def process_actual_item( self, actual_hours, date ):
-        inc_date = self.start_date
         if ( date.weekday() != 5 ) and ( date.weekday() != 6 ):
             self.date_hours_actual_map[ date ] += actual_hours
             self.date_hours_burnup_map[ date ] += actual_hours
+
     def post_process( self ):
         inc_date = self.start_date
         prev_date = None
@@ -56,40 +54,40 @@ class Burndown:
         burnup_prev_hours = 0
         for num in range( self.days ):
             if ( inc_date.weekday() != 5 ) and ( inc_date.weekday() != 6 ):
-                if ( prev_date ):
+                if prev_date:
                     prev_hours = self.date_hours_actual_map[ prev_date ]
                     burnup_prev_hours = self.date_hours_burnup_map[ prev_date ]
                 temp = prev_hours - self.date_hours_actual_map[ inc_date ]
                 self.date_hours_actual_map[ inc_date ] = temp
                 self.date_hours_burnup_map[ inc_date ] += burnup_prev_hours
                 prev_date = inc_date
-            if ( inc_date.weekday() == 4 ):
+            if inc_date.weekday() == 4:
                 inc_date += datetime.timedelta( days = 3 )
             else:
                 inc_date += datetime.timedelta( days = 1 )
+
     def burndown_data_to_sheet_obj( self, sheet ):
-        sheet_data_arr = [ ]
         arr = [ "Ideal", "Burndown", "Burnup" ]
-        # sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
         sheet.add_data_row_bd( arr )
         inc_date = self.start_date
         for num in range( self.days ):
-            arr = [ self.date_hours_ideal_map[ inc_date ], \
-                self.date_hours_actual_map[ inc_date ], \
+            arr = [ self.date_hours_ideal_map[ inc_date ],
+                self.date_hours_actual_map[ inc_date ],
                 self.date_hours_burnup_map[ inc_date ] ]
-            # sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
             sheet.add_data_row_bd( arr )
-            if ( inc_date.weekday() == 4 ):
+            if inc_date.weekday() == 4:
                 inc_date += datetime.timedelta( days = 3 )
             else:
                 inc_date += datetime.timedelta( days = 1 )
+
     def print_completed_burndown( self ):
         inc_date = self.start_date
         for num in range( self.days ):
-            if ( inc_date.weekday() == 4 ):
+            if inc_date.weekday() == 4:
                 inc_date += datetime.timedelta( days = 3 )
             else:
                 inc_date += datetime.timedelta( days = 1 )
+
     def __init__( self, start_date, end_date ):
         self.start_date = start_date
         self.end_date = end_date
@@ -104,8 +102,8 @@ class Burndown:
         self.curr_actual_remaining = 0
         self.estimate = 0
         temp_date = self.start_date
-        if ( self.start_date < self.end_date ):
-            while ( temp_date != self.end_date ):
+        if self.start_date < self.end_date:
+            while temp_date != self.end_date:
                 if ( temp_date.weekday() != 5 ) and ( temp_date.weekday() != 6 ):
                     self.days += 1
                 temp_date += datetime.timedelta( days = 1 )
@@ -115,10 +113,11 @@ class Burndown:
             self.date_hours_ideal_map[ inc_date ] = 0
             self.date_hours_actual_map[ inc_date ] = 0
             self.date_hours_burnup_map[ inc_date ] = 0
-            if ( inc_date.weekday() == 4 ):
+            if inc_date.weekday() == 4:
                 inc_date += datetime.timedelta( days = 3 )
             else:
                 inc_date += datetime.timedelta( days = 1 )
+
 
 class ReportSheet:
     def __init__( self, name, teamArr = None ):
@@ -134,16 +133,20 @@ class ReportSheet:
         # else:
         self.bd_ws = self.wb.create_sheet( 'Burndown' )
         self.wb.save( name + ".xlsx" )
+
     def add_data_row( self, arr ):
         self.data.append( arr )
+
     def add_data_row_bd( self, arr ):
         self.bd_data.append( arr )
+
     def post_process( self ):
         for item in self.data:
             self.ws.append( item )
         for item in self.bd_data:
             self.bd_ws.append( item )
         self.wb.save( self.name + ".xlsx" )
+
 
 # email notification on report generation completion as traversing the
 # issues in the repository can take time
@@ -164,17 +167,17 @@ def push_email():
     except Exception:
         update_status_message( "Unable to send email", 2 )
 
-def push_email_to_user( sender_email, sender_pwd, recipent_email_list, email_sub, \
-    email_msg, bcc_email=None, error_code=2 ):
+
+def push_email_to_user( sender_email, sender_pwd, recipent_email_list, email_sub,
+                        email_msg, bcc_email=None, error_code=2 ):
     try:
         server = smtplib.SMTP( 'smtp.gmail.com', 587 )
         server.ehlo()
         server.starttls()
         server.login( sender_email, sender_pwd )
-        email_list_str = ','.join( map( str, recipent_email_list) )
         recipents = []
         recipents.extend( recipent_email_list )
-        if ( bcc_email != None ):
+        if bcc_email != None:
             recipents.append( bcc_email )
         message = MIMEText( email_msg )
         message[ 'Subject' ] = email_sub
@@ -185,58 +188,55 @@ def push_email_to_user( sender_email, sender_pwd, recipent_email_list, email_sub
     except Exception:
         update_status_message( "Unable to send email", error_code )
 
+
 # verify that the milestone assigned to the issue is in the on-going sprint
 # this will be done by getting the current sprint, extracting the date from
 # the current sprint, and comparing against milestone assigned to the issue
 def verify_milestone( issue, repo ):
-    is_within_sprint = False
-    is_month_valid = False
-    is_date_valid = False
-    curr_sprint = ''
     sprint_due_date = None
     open_stones = repo.milestones( 'open' )
     for stone in open_stones:
-        if ( 'Sprint' in str( stone ) ):
+        if 'Sprint' in str( stone ):
             curr_sprint = str( stone )
-            if ( stone.due_on ):
+            if stone.due_on:
                 sprint_due_date = stone.due_on.date()
     curr_date = datetime.date.today()
-    if ( curr_date <= sprint_due_date ):
+    if curr_date <= sprint_due_date:
         is_within_sprint = True
     else:
         is_within_sprint = False
     return is_within_sprint
 
+
 def get_repo_by_index( gh, index ):
     repos = gh.repositories()
     reparr = [ ]
-    repo_index = 0
     for repo in repos:
         reparr.append( repo )
     return reparr[ index ]
 
+
 def get_repo_by_name( gh, name ):
     repos = gh.repositories()
-    reparr = [ ]
-    count = 0
-    repo_index = 0
     ret_repo = None
     for repo in repos:
         if ( repo.name == name ):
             ret_repo = repo
     return ret_repo
 
+
 def get_sprint_from_issue( issue ):
     curr_sprint = issue.milestone
     sprint_info = None
-    if ( curr_sprint ):
+    if curr_sprint:
         sprint_end_date = curr_sprint.due_on.date()
         start_date = sprint_end_date
         sprint_issues_count = curr_sprint.open_issues_count + \
-                curr_sprint.closed_issues_count
-        sprint_info = { 'object': curr_sprint, 'issue-count': sprint_issues_count, \
-                'end-date': sprint_end_date, 'start-date': start_date }
+                              curr_sprint.closed_issues_count
+        sprint_info = { 'object': curr_sprint, 'issue-count': sprint_issues_count,
+                        'end-date': sprint_end_date, 'start-date': start_date }
     return sprint_info
+
 
 # this will return a dictionary containing the actual sprint object,
 # the number of issues within the sprint, and the due date.
@@ -247,34 +247,36 @@ def get_curr_sprint_info( repo ):
     closed_stones = repo.milestones( 'closed' )
     criteria = 'Sprint'
     num_days = int( sprint_weeks_input.get() ) * NUM_BUSINESS_DAYS_PER_WEEK
-    if ( sprint_override_input.get() != '' ):
+    if sprint_override_input.get() != '':
         criteria = sprint_override_input.get()
     for stone in closed_stones:
-        if ( criteria in str( stone ) ):
+        if criteria in str( stone ):
             curr_sprint = stone
     for stone in open_stones:
-        if ( criteria in str( stone ) ):
+        if criteria in str( stone ):
             curr_sprint = stone
-    if ( curr_sprint ):
+    if curr_sprint:
         sprint_issues_count = curr_sprint.open_issues_count + \
             curr_sprint.closed_issues_count
         sprint_end_date = curr_sprint.due_on.date()
         start_date = sprint_end_date
         for num in range( num_days - 1 ):
-            if ( start_date.weekday() == 0 ):
+            if start_date.weekday() == 0:
                 start_date += datetime.timedelta( days = -3 )
             else:
                 start_date += datetime.timedelta( days = -1 )
-        sprint_info = { 'object': curr_sprint, 'issue-count': sprint_issues_count, \
-            'end-date': sprint_end_date, 'start-date': start_date }
+        sprint_info = { 'object': curr_sprint, 'issue-count': sprint_issues_count,
+                        'end-date': sprint_end_date, 'start-date': start_date }
     return sprint_info
+
 
 def is_date_within_sprint( sprint_info, verify_date ):
     if ( verify_date <= sprint_info[ 'end-date' ] ) and \
-        ( verify_date >= sprint_info[ 'start-date' ] ):
+    ( verify_date >= sprint_info[ 'start-date' ] ):
         return True
     else:
         return False
+
 
 def is_date_within_range( start_date, end_date, verify_date ):
     if ( verify_date >= start_date ) and ( verify_date <= end_date ):
@@ -282,21 +284,24 @@ def is_date_within_range( start_date, end_date, verify_date ):
     else:
         return False
 
+
 def get_date_from_input( date_str ):
     date_year = int( date_str[ 0:4 ] )
     date_month = int( date_str[ 5:7 ] )
     date_day = int( date_str[ 8:10 ] )
     created_date = datetime.date( date_year, date_month, date_day )
-    if ( type( created_date ) == datetime.date ):
+    if type( created_date ) == datetime.date:
         return created_date
     else:
         return None
+
 
 # returns the github username of the person who made the comment
 # on the sprint issue
 def get_comment_author( comment ):
     author = comment.user
     return author
+
 
 # hours can be written as a part of the comment body as
 # '8hrs'. the numeric value will be extracted and recorded 
@@ -307,28 +312,27 @@ def get_comment_author( comment ):
 def parse_comment( text ):
     data = [ 0, None ]
     loc = []
-    full_hours_text = ''
     hours_text_arr = []
-    total_hours = 0
     splt = text.split( ' ' )
     breakout = False
     for item in splt:
-        if ( breakout == False ):
-            if ( 'hrs' in item ):
+        if breakout == False:
+            if 'hrs' in item:
                 splt_yet_again = item.split( "\n" )
                 for sub_item in splt_yet_again:
-                    if ( 'hrs' in sub_item ):
+                    if 'hrs' in sub_item:
                         loc.append( sub_item.find( 'hrs' ) )
                         full_hours_text = str( sub_item )
                         hours_text_arr.append( full_hours_text )
     for item in hours_text_arr:
-        if ( loc.count > 0 ):
+        if loc.count > 0:
             prefix_cleaned = item[ :-3 ]
             prefix_cleaned = prefix_cleaned.translate( None, letters )
-            if ( prefix_cleaned.isdigit() ):
+            if prefix_cleaned.isdigit():
                 data[ 0 ] += int( prefix_cleaned )
                 data[ 1 ] = text.split( item )[ 1 ]
     return data
+
 
 # need to check whether the comment we are processing for hours
 # has already has its hours recorded in the Google Sheet. this
@@ -337,6 +341,7 @@ def parse_comment( text ):
 def comment_id_check( gs, comment ):
     pass
 
+
 # write information passed through the array into the xlsx
 def process_sheet( ws, wb, arr, sheet_data_arr ):
     ws.append( arr )
@@ -344,23 +349,23 @@ def process_sheet( ws, wb, arr, sheet_data_arr ):
     wb.save( 'report.xlsx' )
     return sheet_data_arr
 
+
 def is_item_in_sheet( sheet_data_arr, item, col_num ):
     found = False
-    rownum = 1
-    inc = 0
-    if ( sheet_data_arr ):
+    if sheet_data_arr:
         for row in sheet_data_arr:
-            if ( row[ col_num ] == item ):
+            if row[ col_num ] == item:
                 found = True
                 break
     return found
+
 
 # function checks whether an issue within the sprint or the date range
 # has comments or not, then parses any available comments to check for
 # hours which are appended to the worksheet array as well as the sheet
 # itself.
-def process_comments_and_report( sheet, issue, comments, \
-        sprint_info = None, start_date = None, end_date = None, bd = None ):
+def process_comments_and_report( sheet, issue, comments, sprint_info = None,
+                                 start_date = None, end_date = None, bd = None ):
     processed_count = 0
     cmnt_count = 0
     some_hours_found = False
@@ -375,32 +380,31 @@ def process_comments_and_report( sheet, issue, comments, \
         cmnt_count += 1
         comment_body = comment.body
         hours, notes = parse_comment( comment_body )
-        if ( hours != None ) and ( hours != 0 ):
+        if ( hours is not None ) and ( hours != 0 ):
             some_hours_found = True
-    if ( cmnt_count > 0 ) and ( some_hours_found ):
+    if ( cmnt_count > 0 ) and some_hours_found:
         for comment in comments:
             comment_date = comment.created_at.date()
             process = False
-            if ( sprint_info ) and ( issue_retrieval_method_var.get() == 1 ):
-                if ( is_date_within_sprint( sprint_info, comment_date ) ):
+            if sprint_info and ( issue_retrieval_method_var.get() == 1 ):
+                if is_date_within_sprint( sprint_info, comment_date ):
                     process = True
-            elif ( issue_retrieval_method_var.get() == 2 ):
-                if ( start_date ) and ( end_date ):
-                    if ( is_date_within_range( start_date, end_date, comment_date ) ):
+            elif issue_retrieval_method_var.get() == 2:
+                if start_date and end_date:
+                    if is_date_within_range( start_date, end_date, comment_date ):
                         process = True
-            if ( process ):
+            if process:
                 comment_body = comment.body
                 comment_id = comment.id
                 hours, notes = parse_comment( comment_body )
-                if ( hours != None ) and ( hours != 0 ):
-                    if ( not is_item_in_sheet( sheet.data, comment_id, 1 ) ):
-                        arr = [ issue.number, assignees, status, stry_pnts, \
-                            comment_id, str( comment.user ), sprint, est, hours, \
-                            comment_date, notes ]
-                        # sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
+                if ( hours is not None ) and ( hours != 0 ):
+                    if not is_item_in_sheet( sheet.data, comment_id, 1 ):
+                        arr = [ issue.number, assignees, status, stry_pnts,
+                                comment_id, str( comment.user ), sprint, est, hours,
+                                comment_date, notes ]
                         sheet.add_data_row( arr )
                         processed_count += 1
-                        if ( bd ):
+                        if bd:
                             bd.process_actual_item( hours, comment_date )
     else:
         # put the issue in the list anyway even if it doesn't have any comments
@@ -408,59 +412,65 @@ def process_comments_and_report( sheet, issue, comments, \
         # range report. For the case of a date range report, this would not be
         # applicable since we need only report issues which have had comments
         # and they can be issues with or without sprint assignments.
-        if ( sprint_info ) and ( issue_retrieval_method_var.get() == 1 ):
-            if ( not is_item_in_sheet( sheet.data, issue.number, 0 ) ):
-                arr = [ issue.number, assignees, status, stry_pnts, None, None, sprint, \
-                    est, None, None, None ]
-                # sheet_data_arr = process_sheet( ws, wb, arr, sheet_data_arr )
+        if sprint_info and ( issue_retrieval_method_var.get() == 1 ):
+            if not is_item_in_sheet( sheet.data, issue.number, 0 ):
+                arr = [ issue.number, assignees, status, stry_pnts, None, None, sprint,
+                        est, None, None, None ]
                 sheet.add_data_row( arr )
                 processed_count += 1
-    if ( processed_count > 0 ):
+    if processed_count > 0:
         # return True, sheet_data_arr
         return True
     else:
         # return False, sheet_data_arr
         return False
 
+
 def disable_process_buttons():
     sprint_report_button.config( state='disabled' )
+
 
 def enable_process_buttons():
     sprint_report_button.config( state='normal' )
 
+
 def disable_commit_buttons():
     commits_button.config( state='disabled' )
+
 
 def enable_commit_buttons():
     commits_button.config( state='normal' )
 
+
 def update_status_message( msg, code = 0 ):
-    if ( code == 0 ):
+    if code == 0:
         status_label.configure( foreground = "blue" )
         enable_process_buttons()
         status_label[ 'text' ] = msg
-    elif ( code == 1 ):
+    elif code == 1:
         status_label.configure( foreground = "orange" )
         disable_process_buttons()
         status_label[ 'text' ] = msg
-    elif( code == 2 ):
+    elif code == 2:
         status_label.configure( foreground = "red" )
         enable_process_buttons()
         enable_commit_buttons()
         status_label[ 'text' ] = msg
-    elif( code == 4 ):
+    elif code == 4:
         commits_status_label.configure( foreground = "orange" )
         disable_commit_buttons()
         commits_status_label[ 'text' ] = msg
-    elif( code == 5 ):
+    elif code == 5:
         commits_status_label.configure( foreground = "blue" )
         enable_commit_buttons()
         commits_status_label[ 'text' ] = msg
-    elif( code == 6 ):
+    elif code == 6:
         commits_status_label.configure( foreground = "red" )
         commits_status_label[ 'text' ] = msg
 
+
 issue_retrieval_method_var = IntVar()
+
 
 def get_team_dict_from_csv():
     dict = {}
@@ -470,6 +480,7 @@ def get_team_dict_from_csv():
         splt = item[ 0 ].split( "," )
         dict[ splt[ 0 ] ] = [ splt[ 1 ], splt[ 2 ] ]
     return dict
+
 
 # checks we need to consider in commit:
 # 1) check if issue reference format is present in the commit
@@ -481,6 +492,7 @@ def is_commit_format( cmt ):
         and ( not str( "Rebasing" ).lower() in str( cmt ).lower() ):
         violation_code = 1
     return violation_code
+
 
 # this function will return the story points that are assigned to the
 # issue passed to the function. The assignment is done in the form of 
