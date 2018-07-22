@@ -585,9 +585,9 @@ def commits_report():
                                     comment_adjustment_found = True
                             if comment_adjustment_found is False:
                                 push_email_to_user(commits_sender_email_input.get(),
-                                                    commits_sender_pwd_input.get(), emails_list,
-                                                    email_sub, email_msg,
-                                                    commits_admin_email_input.get(), 6)
+                                                   commits_sender_pwd_input.get(), emails_list,
+                                                   email_sub, email_msg,
+                                                   commits_admin_email_input.get(), 6)
                                 time.sleep(5.0)
                     elif violation_code == 2:   # something for later
                         pass
@@ -653,7 +653,7 @@ def sprint_report_preprocess(repo):
 def sprint_report_issue_processor(issue, sprint_info, issues_count_inc,
                                   report_sheet, bd, processed_count):
     msg = 'Processing #' + str(issue.number) + ', please wait...'
-    jump_to_next = False
+    break_out = False
     update_status_message(msg, 1)
     if issue_retrieval_method_var.get() == 1:
         if issue.milestone:
@@ -668,11 +668,12 @@ def sprint_report_issue_processor(issue, sprint_info, issues_count_inc,
                     if is_processed:
                         processed_count += 1
                     if str(isscount_override_input.get()) != '':
+                        print(issues_count_inc)
                         if issues_count_inc == int(isscount_override_input.get()):
-                            jump_to_next = True
+                            break_out = True
                     else:
                         if issues_count_inc == sprint_info['issue-count']:
-                            jump_to_next = True
+                            break_out = True
     elif issue_retrieval_method_var.get() == 2:
         if (start_date_input.get()) and (end_date_input.get()):
             created_start_date = get_date_from_input(start_date_input.get())
@@ -689,7 +690,7 @@ def sprint_report_issue_processor(issue, sprint_info, issues_count_inc,
                         processed_count += 1
             else:
                 update_status_message("Please provide valid dates", 2)
-    return jump_to_next, processed_count
+    return break_out, processed_count, issues_count_inc
 
 
 def sprint_report():
@@ -708,8 +709,8 @@ def sprint_report():
             repo = get_repo_by_name(gh, repo_input.get())
             if repo:
                 repo_issues, sprint_info, bd, terminate = sprint_report_preprocess(repo)
-                issues_count_inc = 0
                 processed_count = 0
+                issues_count_inc = 0
                 if terminate is False:
                     for issue in repo_issues:
                         if issue_term_input.get() != '':
@@ -722,10 +723,12 @@ def sprint_report():
                             else:
                                 process = False
                         if process:
-                            jump_to_next, processed_count = \
-                                sprint_report_issue_processor(issue, sprint_info, issues_count_inc,
-                                                              report_sheet, bd, processed_count)
-                            if jump_to_next:
+                            break_out, processed_count, issues_count_inc = \
+                                sprint_report_issue_processor(issue, sprint_info,
+                                                              issues_count_inc,
+                                                              report_sheet,
+                                                              bd, processed_count)
+                            if break_out:
                                 break
                 if processed_count > 0:
                     bd.post_process()
