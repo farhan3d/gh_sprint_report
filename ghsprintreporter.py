@@ -171,7 +171,7 @@ def push_email():
 
 
 def push_email_to_user(sender_email, sender_pwd, recipent_email_list, email_sub,
-                        email_msg, bcc_email=None, error_code=2):
+                       email_msg, bcc_email=None, error_code=2):
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.ehlo()
@@ -788,25 +788,25 @@ password_container.pack()
 repo_container = Frame(settings_frame, width = 30)
 repo_container.pack()
 username_label = Label(username_container, width=15, height=1,
-    text="Github username", anchor='w')
+                       text="Github username", anchor='w')
 username_label.pack(side = LEFT)
 username_input = Entry(username_container, width = 25, borderwidth = 1,
-    font = 'Calibri, 12')
+                       font = 'Calibri, 12')
 username_input.pack(side = RIGHT)
 username_input.focus()
 sep2 = Frame(main_frame, height = 10)
 sep2.pack(side = BOTTOM)
 password_label = Label(password_container, width=15, height=1,
-    text="Github password", anchor='w')
+                       text="Github password", anchor='w')
 password_label.pack(side = LEFT)
 password_input = Entry(password_container, show='*',width = 25,
-    borderwidth = 1, font = 'Calibri, 12')
+                       borderwidth = 1, font = 'Calibri, 12')
 password_input.pack(side = RIGHT)
 repo_label = Label(repo_container, width=15, height=1,
-    text="Repository name", anchor='w')
+                   text="Repository name", anchor='w')
 repo_label.pack(side = LEFT)
 repo_input = Entry(repo_container, width = 25,
-    borderwidth = 1, font = 'Calibri, 12')
+                   borderwidth = 1, font = 'Calibri, 12')
 repo_input.pack(side = RIGHT)
 email_container = Frame(main_frame, width = 30)
 email_container.pack()
@@ -823,13 +823,13 @@ end_date_container = Frame(main_frame, width = 30)
 sprint_weeks_container = Frame(main_frame, width = 35)
 sprint_override_container = Frame(main_frame, width = 35)
 start_date_input = Entry(start_date_container, width = 15, borderwidth = 1,
-    font = 'Calibri, 12')
+                         font = 'Calibri, 12')
 end_date_input = Entry(end_date_container, width = 15, borderwidth = 1,
-    font = 'Calibri, 12')
+                       font = 'Calibri, 12')
 sprint_weeks_input = Entry(sprint_weeks_container, width = 20,
-    borderwidth = 1, font = 'Calibri, 12')
+                           borderwidth = 1, font = 'Calibri, 12')
 sprint_override_input = Entry(sprint_override_container, width = 20,
-    borderwidth = 1, font = 'Calibri, 12')
+                              borderwidth = 1, font = 'Calibri, 12')
 
 
 def sprint_toggle_callback():
@@ -847,39 +847,39 @@ def date_toggle_callback():
 
 
 rad1 = Radiobutton(radio_butt_frame, text="Report by sprint",
-    variable=issue_retrieval_method_var, value=1, padx = 5, command = sprint_toggle_callback)
+                   variable=issue_retrieval_method_var, value=1, padx = 5, command = sprint_toggle_callback)
 rad1.pack(side = LEFT)
 rad1.select()
 rad2 = Radiobutton(radio_butt_frame, text="Report by dates",
-    variable=issue_retrieval_method_var, value=2, padx = 5, command = date_toggle_callback)
+                   variable=issue_retrieval_method_var, value=2, padx = 5, command = date_toggle_callback)
 rad2.pack(side = LEFT)
 sep1 = Frame(main_frame, height = 10)
 sep1.pack()
 sprint_override_container.pack()
 sprint_override_label = Label(sprint_override_container, width = 20,
-    height = 1, text="Sprint title", anchor='w')
+                              height = 1, text="Sprint title", anchor='w')
 sprint_override_label.pack(side = LEFT)
 sprint_weeks_container.pack()
 sprint_weeks_label = Label(sprint_weeks_container, width = 20,
-    height = 1, text="Sprint weeks", anchor='w')
+                           height = 1, text="Sprint weeks", anchor='w')
 sprint_weeks_label.pack(side = LEFT)
 start_date_container.pack()
 start_date_label = Label(start_date_container, width = 25, height = 1,
-    text="Start date [ YYYY-MM-DD ]", anchor='w')
+                         text="Start date [ YYYY-MM-DD ]", anchor='w')
 start_date_label.pack(side = LEFT)
 start_date_input.pack(side = RIGHT)
 end_date_container.pack()
 end_date_label = Label(end_date_container, width = 25, height = 1,
-    text="End date [ YYYY-MM-DD ]", anchor='w')
+                       text="End date [ YYYY-MM-DD ]", anchor='w')
 end_date_label.pack(side = LEFT)
 sprint_override_input.pack(side = RIGHT)
 isscount_override_container = Frame(main_frame, width = 35)
 isscount_override_container.pack()
 isscount_override_label = Label(isscount_override_container, width = 20,
-    height = 1, text="Issue count override", anchor='w')
+                                height = 1, text="Issue count override", anchor='w')
 isscount_override_label.pack(side = LEFT)
 isscount_override_input = Entry(isscount_override_container, width = 20,
-    borderwidth = 1, font = 'Calibri, 12')
+                                borderwidth = 1, font = 'Calibri, 12')
 isscount_override_input.pack(side = RIGHT)
 sprint_weeks_input.insert(0, '2')
 sprint_weeks_input.pack(side = RIGHT)
@@ -887,47 +887,47 @@ end_date_input.pack(side = RIGHT)
 team_container = Frame(main_frame, width = 35)
 team_container.pack()
 team_label = Label(team_container, width = 20,
-    height = 1, text="Filter by team label", anchor='w')
+                   height = 1, text="Filter by team label", anchor='w')
 team_label.pack(side = LEFT)
 team_input = Entry(team_container, width = 20,
-    borderwidth = 1, font = 'Calibri, 12')
+                   borderwidth = 1, font = 'Calibri, 12')
 team_input.pack(side = RIGHT)
 
 issue_term_container = Frame(main_frame, width = 35)
 issue_term_container.pack()
 issue_term_label = Label(issue_term_container, width = 20,
-    height = 1, text="Terminate at issue #", anchor='w')
+                         height = 1, text="Terminate at issue #", anchor='w')
 issue_term_label.pack(side = LEFT)
 issue_term_input = Entry(issue_term_container, width = 20,
-    borderwidth = 1, font = 'Calibri, 12')
+                         borderwidth = 1, font = 'Calibri, 12')
 issue_term_input.pack(side = RIGHT)
 
 status_label = Label(main_frame, width=35, height=1, text="")
 status_label.pack(side = BOTTOM)
 email_label = Label(email_container, width=15, height=1,
-    text="Sender Email", anchor='w')
+                    text="Sender Email", anchor='w')
 email_label.pack(side = LEFT)
 email_input = Entry(email_container, width = 25, borderwidth = 1,
-    font = 'Calibri, 12')
+                    font = 'Calibri, 12')
 email_input.pack(side = RIGHT)
 email_pwd_label = Label(email_pwd_container, width=15, height=1,
-    text="Sender Password", anchor='w')
+                        text="Sender Password", anchor='w')
 email_pwd_label.pack(side = LEFT)
 email_pwd_input = Entry(email_pwd_container, width = 25,
-    borderwidth = 1, font = 'Calibri, 12')
+                        borderwidth = 1, font = 'Calibri, 12')
 email_pwd_input.pack(side = RIGHT)
 recipent_label = Label(recipent_container, width=15, height=1,
-    text="Recipent Email", anchor='w')
+                       text="Recipent Email", anchor='w')
 recipent_label.pack(side = LEFT)
 recipent_input = Entry(recipent_container, width = 25,
-    borderwidth = 1, font = 'Calibri, 12')
+                       borderwidth = 1, font = 'Calibri, 12')
 recipent_input.pack(side = RIGHT)
 sep2 = Frame(main_frame, height = 10)
 sep2.pack(side = BOTTOM)
 # exit_button = Button(main_frame, width = 35, bd = 2, text="Quit", command = quit)
 # exit_button.pack(side = BOTTOM)
 sprint_report_button = Button(main_frame, width = 35, bd = 2,
-    text="Generate Report", command = sprint_report_main)
+                              text="Generate Report", command = sprint_report_main)
 sprint_report_button.pack(side = BOTTOM)
 # test_button = Button(main_frame, width = 35, bd = 2,
 #     text="[ test button ]", command = test_func)
@@ -945,18 +945,18 @@ sep2.pack(side = BOTTOM)
 issue_criteria_container = Frame(commits_frame, width = 30)
 issue_criteria_container.pack()
 issue_criteria_label = Label(issue_criteria_container, width=15, height=1,
-    text="Issue ref. criteria", anchor='w')
+                             text="Issue ref. criteria", anchor='w')
 issue_criteria_label.pack(side = LEFT)
 issue_criteria_input = Entry(issue_criteria_container, width = 25, borderwidth = 1,
-    font = 'Calibri, 12')
+                             font = 'Calibri, 12')
 issue_criteria_input.pack(side = RIGHT)
 commits_date_container = Frame(commits_frame, width = 30)
 commits_date_container.pack()
 commits_date_label = Label(commits_date_container, width = 25, height = 1,
-    text="Start date [ YYYY-MM-DD ]", anchor='w')
+                           text="Start date [ YYYY-MM-DD ]", anchor='w')
 commits_date_label.pack(side = LEFT)
 commits_date_input = Entry(commits_date_container, width = 15, borderwidth = 1,
-    font = 'Calibri, 12')
+                           font = 'Calibri, 12')
 commits_date_input.pack(side = RIGHT)
 commits_status_label = Label(commits_frame, width=35, height=1, text="", anchor='w')
 commits_status_label.pack(side = BOTTOM)
@@ -965,29 +965,29 @@ sep2.pack(side = BOTTOM)
 commits_sender_email_container = Frame(commits_frame, width = 30)
 commits_sender_email_container.pack()
 commits_sender_email_label = Label(commits_sender_email_container, width = 15, height = 1,
-    text="Sender Email", anchor='w')
+                                   text="Sender Email", anchor='w')
 commits_sender_email_label.pack(side = LEFT)
 commits_sender_email_input = Entry(commits_sender_email_container, width = 25, borderwidth = 1,
-    font = 'Calibri, 12')
+                                   font = 'Calibri, 12')
 commits_sender_email_input.pack(side = RIGHT)
 commits_sender_pwd_container = Frame(commits_frame, width = 30)
 commits_sender_pwd_container.pack()
 commits_sender_pwd_label = Label(commits_sender_pwd_container, width = 15, height = 1,
-    text="Sender Password", anchor='w')
+                                 text="Sender Password", anchor='w')
 commits_sender_pwd_label.pack(side = LEFT)
 commits_sender_pwd_input = Entry(commits_sender_pwd_container, width = 25, borderwidth = 1,
-    font = 'Calibri, 12')
+                                 font = 'Calibri, 12')
 commits_sender_pwd_input.pack(side = RIGHT)
 commits_admin_email_container = Frame(commits_frame, width = 30)
 commits_admin_email_container.pack()
 commits_admin_email_label = Label(commits_admin_email_container, width = 15, height = 1,
-    text="BCC Admin Email", anchor='w')
+                                  text="BCC Admin Email", anchor='w')
 commits_admin_email_label.pack(side = LEFT)
 commits_admin_email_input = Entry(commits_admin_email_container, width = 25, borderwidth = 1,
-    font = 'Calibri, 12')
+                                  font = 'Calibri, 12')
 commits_admin_email_input.pack(side = RIGHT)
 commits_button = Button(commits_frame, width = 35, bd = 2,
-    text="Commit Messages Report", command = commits_report)
+                        text="Commit Messages Report", command = commits_report)
 commits_button.pack(side = BOTTOM)
 
 start_date_input.config(state='disabled')
