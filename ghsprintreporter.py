@@ -1,4 +1,4 @@
-# release 1.1
+# release 1.2
 
 from __future__ import division
 from github3 import login
