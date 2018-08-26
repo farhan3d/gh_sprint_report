@@ -643,7 +643,7 @@ def sprint_report(ui_obj):
     gh = gh_login(ui_obj)
     report_sheet = ReportSheet('report')
     arr = ["Issue", "Assignees", "Status", "St. Pts", "Comment ID", "Author",
-           "Sprint", "Estimate", "Actual Hours", "Date", "Comments"]
+           "Sprint", "Hours Est.", "Actual Hours", "Date", "Comments"]
     report_sheet.add_data_row(arr)
 
     def process_thread():
